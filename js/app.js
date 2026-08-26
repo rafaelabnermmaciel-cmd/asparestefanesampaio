@@ -285,21 +285,43 @@ function renderDashboard() {
 
   const hoje = hojeISO();
   const diasParaPrazo = diffDiasISO(hoje, PRAZO_FINAL_VISITAS);
+  const diasParaVotacao = diffDiasISO(hoje, PRAZO_VOTACAO);
   const mostrarMiniTrio = hoje >= MINI_TRIO.disponivelDesde;
 
-  container.innerHTML = `
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <label class="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-        Ver resumo de:
-        <input type="date" id="dash-data" value="${data}" class="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200" />
-      </label>
-      <button id="dash-hoje" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Ir para hoje</button>
-    </div>
+  const totalRAs = new Set(state.localidades.map((l) => l.ra)).size;
+  const raCobertas = totalRAs - naoIniciadas.length;
+  const pctCobertas = totalRAs > 0 ? Math.round((raCobertas / totalRAs) * 100) : 0;
+  const raioMeter = 52;
+  const circunferenciaMeter = 2 * Math.PI * raioMeter;
+  const offsetMeter = circunferenciaMeter * (1 - pctCobertas / 100);
 
-    <div class="rounded-2xl border border-slate-200 bg-white p-4 text-xs text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-      🗓️ Prazo final de visitas às RAs: <strong class="text-slate-700 dark:text-slate-200">${formatDateBR(PRAZO_FINAL_VISITAS)}</strong>
-      (10 dias antes da votação, marcada para ${formatDateBR(PRAZO_VOTACAO)})${diasParaPrazo >= 0 ? ` — faltam <strong>${diasParaPrazo}</strong> dia(s).` : ' — prazo encerrado.'}
-      ${mostrarMiniTrio ? `<br/>🔊 Mini trio (paredão) disponível desde ${formatDateBR(MINI_TRIO.disponivelDesde)}, das ${MINI_TRIO.inicio} às ${MINI_TRIO.fim}.` : ''}
+  container.innerHTML = `
+    <div class="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
+      <div class="rounded-2xl border border-indigo-200 bg-indigo-50 p-6 shadow-sm dark:border-indigo-900 dark:bg-indigo-500/10">
+        <p class="text-xs font-medium uppercase tracking-wide text-indigo-500 dark:text-indigo-400">Dias até a votação</p>
+        <p class="mt-1 text-6xl font-bold leading-none text-indigo-600 dark:text-indigo-400">${diasParaVotacao >= 0 ? diasParaVotacao : 0}</p>
+        <p class="mt-2 text-sm text-indigo-500/80 dark:text-indigo-400/80">${diasParaVotacao >= 0 ? `Votação em ${formatDateBR(PRAZO_VOTACAO)}` : 'Votação já realizada'}</p>
+        <div class="mt-4 border-t border-indigo-200 pt-3 text-xs text-indigo-700/80 dark:border-indigo-900 dark:text-indigo-300/80">
+          🗓️ Prazo final de visitas às RAs: <strong class="text-indigo-800 dark:text-indigo-200">${formatDateBR(PRAZO_FINAL_VISITAS)}</strong>
+          ${diasParaPrazo >= 0 ? ` — faltam <strong class="text-indigo-800 dark:text-indigo-200">${diasParaPrazo}</strong> dia(s)` : ' — prazo encerrado'}
+          ${mostrarMiniTrio ? `<br/>🔊 Mini trio (paredão) disponível desde ${formatDateBR(MINI_TRIO.disponivelDesde)}, das ${MINI_TRIO.inicio} às ${MINI_TRIO.fim}` : ''}
+        </div>
+      </div>
+      <div class="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <p class="mb-3 text-xs font-medium uppercase tracking-wide text-slate-400">RAs cobertas</p>
+        <div class="relative h-32 w-32">
+          <svg viewBox="0 0 120 120" class="h-32 w-32 -rotate-90">
+            <circle cx="60" cy="60" r="${raioMeter}" fill="none" stroke-width="12" class="stroke-emerald-100 dark:stroke-emerald-900/40" />
+            <circle cx="60" cy="60" r="${raioMeter}" fill="none" stroke-width="12" stroke-linecap="round"
+              stroke-dasharray="${circunferenciaMeter.toFixed(1)}" stroke-dashoffset="${offsetMeter.toFixed(1)}"
+              class="stroke-emerald-500 dark:stroke-emerald-400" />
+          </svg>
+          <div class="absolute inset-0 flex items-center justify-center">
+            <span class="text-2xl font-bold text-slate-900 dark:text-white">${pctCobertas}%</span>
+          </div>
+        </div>
+        <p class="mt-3 text-xs text-slate-400">${raCobertas} de ${totalRAs} RAs já visitadas</p>
+      </div>
     </div>
 
     ${(naoIniciadas.length || atrasadas.length) ? `
@@ -320,15 +342,12 @@ function renderDashboard() {
       </div>
     </div>` : ''}
 
-    <div class="grid gap-4 sm:grid-cols-2">
-      <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <p class="text-xs font-medium uppercase tracking-wide text-slate-400">Atividades no dia</p>
-        <p class="mt-2 text-3xl font-semibold text-indigo-600 dark:text-indigo-400">${doDia.length}</p>
-      </div>
-      <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <p class="text-xs font-medium uppercase tracking-wide text-slate-400">RAs cobertas no dia</p>
-        <p class="mt-2 text-3xl font-semibold text-emerald-600 dark:text-emerald-400">${Object.keys(porRADia).length}</p>
-      </div>
+    <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
+      <label class="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+        Ver resumo de:
+        <input type="date" id="dash-data" value="${data}" class="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200" />
+      </label>
+      <button id="dash-hoje" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Ir para hoje</button>
     </div>
 
     <div class="grid gap-4 lg:grid-cols-2">
