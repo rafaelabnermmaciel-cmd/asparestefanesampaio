@@ -1,60 +1,84 @@
-# Passo a passo — configurar o Supabase (sem precisar saber programar)
+# Passo a passo — configurar o Firebase (sem precisar saber programar)
 
 Siga na ordem. É só clicar, colar e apertar os botões indicados — em nenhum passo você
 precisa escrever código.
 
 ---
 
-## 1. Criar sua conta e o projeto no Supabase
+## 1. Abrir o projeto no Firebase
 
-1. Acesse **https://supabase.com** numa aba nova.
-2. Clique em **Start your project** (canto superior direito).
-3. Entre com sua conta Google ou GitHub.
-4. Se for a primeira vez, o Supabase já cria uma organização padrão pra você. Clique nela (ou
-   em **New project** se não tiver nenhuma).
-5. Clique no botão verde **New project**. Preencha:
-   - **Name**: `equipe-rua` (ou o nome que quiser, não afeta nada)
-   - **Database Password**: clique em **Generate a password** e copie pra um lugar seguro
-     (você provavelmente não vai precisar dela de novo pra este app, mas é bom guardar).
-   - **Region**: **South America (São Paulo)** — deixa o app mais rápido pra quem acessa do
-     Brasil.
-6. Clique em **Create new project** e aguarde 1–2 minutos enquanto o Supabase prepara tudo.
+Você já criou um projeto no Google Cloud (aparece como "My First Project" /
+`project-398e198f-283b-4d9c-807`). O Firebase usa esse mesmo tipo de projeto por baixo, mas
+precisa ser "adicionado" pelo **console do Firebase** (não o do Google Cloud) pra liberar as
+telas certas. Faça assim:
 
-## 2. Criar as tabelas e as permissões (um script só)
+1. Acesse **https://console.firebase.google.com** (repare: `firebase`, não `cloud`, no
+   endereço) e faça login com a mesma conta Google.
+2. Clique em **Criar um projeto** (ou **Adicionar projeto**).
+3. Se aparecer a opção de usar um projeto do Google Cloud já existente, escolha o seu
+   (`My First Project` / `project-398e198f-283b-4d9c-807`) na lista. Se não aparecer, sem
+   problema — pode criar um projeto novo do zero, com o nome que quiser (ex.:
+   `asparestefanesampaio`).
+4. Pode desmarcar o Google Analytics (não é necessário para este app). Clique em **Criar
+   projeto** (ou **Continuar**) e aguarde alguns segundos.
 
-1. No menu da esquerda, clique no ícone **SQL Editor**.
-2. Clique em **New query**.
-3. Abra o arquivo `supabase/schema.sql` deste projeto, selecione todo o conteúdo
-   (Ctrl+A / Cmd+A) e copie (Ctrl+C / Cmd+C).
-4. Volte pro Supabase e cole (Ctrl+V / Cmd+V) tudo dentro da caixa de texto do SQL Editor.
-5. Clique no botão verde **Run** (ou Ctrl+Enter / Cmd+Enter).
-6. Deve aparecer uma mensagem verde de sucesso lá embaixo. Se aparecer algo em vermelho, me
-   manda o texto do erro que eu ajusto o script.
+## 2. Criar o banco de dados (Firestore)
 
-### Conferir se deu certo
+1. No menu da esquerda, clique em **Compilação** → **Firestore Database**.
+2. Clique em **Criar banco de dados**.
+3. Escolha a localização mais próxima do Brasil (ex.: `southamerica-east1` — São Paulo).
+4. Em modo de segurança, escolha **Iniciar no modo de teste** (regras abertas por 30 dias —
+   depois disso, use as regras da seção 4 abaixo, que não expiram).
+5. Clique em **Ativar**.
 
-Menu da esquerda → **Table Editor**: devem aparecer 3 tabelas — `pessoas` (vazia),
-`localidades` (vazia) e `agenda` (vazia). Elas só ficam com dados depois do passo 5, quando
-você clicar em "Carregar cronograma padrão" dentro do próprio app.
+## 3. Registrar o app da web e pegar a configuração
 
-## 3. Pegar a URL e a chave do projeto (os 2 valores que o app precisa)
+1. No menu da esquerda, clique no ícone de engrenagem ⚙️ ao lado de **Visão geral do
+   projeto** → **Configurações do projeto**.
+2. Role até **Seus apps** e clique no ícone **`</>`** (Web).
+3. Dê um apelido, por exemplo `equipe-rua` (não marque o Firebase Hosting). Clique em
+   **Registrar app**.
+4. Vai aparecer um bloco de código com `const firebaseConfig = { ... }`. Copie os valores de
+   `apiKey`, `authDomain`, `projectId`, `storageBucket`, `messagingSenderId` e `appId`.
+5. Abra o arquivo `js/firebase-config.js` deste projeto e substitua cada `COLE_AQUI_...` pelo
+   valor correspondente que você copiou. Salve o arquivo.
 
-1. Menu da esquerda → ícone de engrenagem **Project Settings** → aba **API** (ou **Data API**,
-   dependendo da versão do painel).
-2. Copie o campo **Project URL** (começa com `https://` e termina em `.supabase.co`).
-3. Copie a chave publicável — aparece como **anon public** (ou, em contas mais novas,
-   **Publishable key**, que começa com `sb_publishable_...`) em **Project API keys**. **Não**
-   copie a `service_role`/**Secret key** — essa é secreta e nunca deve ir para o navegador.
-4. Abra o arquivo `js/supabase-config.js` deste projeto e substitua:
-   - `COLE_AQUI_A_PROJECT_URL` pela Project URL
-   - `COLE_AQUI_A_ANON_KEY` pela chave publicável/anon public
-5. Salve o arquivo. Fica assim, por exemplo:
+   Exemplo de como fica depois de preenchido:
    ```js
-   export const SUPABASE_URL = 'https://abcdefghijk.supabase.co';
-   export const SUPABASE_ANON_KEY = 'sb_publishable_yUDKfC3UoJLRh_xOFQEy0A_EYAjFCXJ';
+   export const firebaseConfig = {
+     apiKey: 'AIzaSyD...',
+     authDomain: 'project-398e198f-283b-4d9c-807.firebaseapp.com',
+     projectId: 'project-398e198f-283b-4d9c-807',
+     storageBucket: 'project-398e198f-283b-4d9c-807.appspot.com',
+     messagingSenderId: '123456789012',
+     appId: '1:123456789012:web:abcdef123456',
+   };
    ```
+6. Clique em **Continuar no console** (não precisa dos passos de "Firebase Hosting" que
+   aparecem em seguida).
 
-## 4. Abrir o app
+## 4. Regras de segurança (recomendado, substitui o "modo de teste")
+
+O modo de teste expira em 30 dias. Para deixar liberado para toda a equipe sem precisar
+renovar, vá em **Firestore Database** → aba **Regras**, apague o conteúdo e cole:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /pessoas/{doc} { allow read, write: if true; }
+    match /localidades/{doc} { allow read, write: if true; }
+    match /agenda/{doc} { allow read, write: if true; }
+  }
+}
+```
+
+Clique em **Publicar**. Isso libera leitura e escrita nas 3 coleções do app para qualquer
+pessoa com o link — adequado para uso interno rápido pela equipe. Se mais adiante quiser
+exigir login, é possível trocar `if true` por uma regra de autenticação, mas isso já exige
+adicionar login ao app (fora do escopo deste app simples).
+
+## 5. Abrir o app
 
 - **Mais simples**: publique este repositório em qualquer hospedagem de arquivos estáticos
   (GitHub Pages, Netlify, Vercel, etc.) e acesse o link com o celular ou computador — é só
@@ -64,9 +88,9 @@ você clicar em "Carregar cronograma padrão" dentro do próprio app.
   Abrir o `index.html` direto pelo `file://` não funciona porque o navegador bloqueia módulos
   JavaScript (`type="module"`) nesse modo.
 
-## 5. Carregar o cronograma pronto (31/08 a 24/09/2026)
+## 6. Carregar o cronograma pronto (31/08 a 24/09/2026)
 
-Assim que o Supabase estiver configurado, abra o app, vá na aba **Agenda diária** e clique no
+Assim que o Firebase estiver configurado, abra o app, vá na aba **Agenda diária** e clique no
 botão **"Carregar cronograma padrão"** (só aparece enquanto a agenda estiver vazia). Isso
 cadastra de uma vez:
 
@@ -81,10 +105,3 @@ localidade que já exista.
 Depois disso, é só a equipe ir cadastrando as **Pessoas** (aba Pessoas) e, na Agenda, editar
 cada atividade para vincular quem vai em cada grupo — ou criar atividades novas para paredão,
 reuniões/café e eventos que forem surgindo.
-
-## Sobre segurança
-
-As regras (RLS) do `schema.sql` deixam as 3 tabelas abertas pra leitura e escrita — qualquer
-pessoa com o link do app consegue cadastrar e editar, sem precisar de login. Adequado para uso
-interno rápido por toda a equipe de rua. Se mais adiante quiser exigir login, dá pra adicionar
-autenticação do Supabase, mas isso fica fora do escopo deste app simples.

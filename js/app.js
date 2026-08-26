@@ -1,5 +1,5 @@
 import {
-  supabaseConfigurado,
+  firebaseConfigurado,
   ouvirPessoas,
   ouvirLocalidades,
   ouvirAgenda,
@@ -10,7 +10,7 @@ import {
   definirStatusAtividade,
   carregarCronogramaPadrao,
   cronogramaJaCarregado,
-} from './db.js';
+} from './firestore.js';
 import { CAPACIDADE_PANFLETAGEM, MINI_TRIO, PRAZO_FINAL_VISITAS, PRAZO_VOTACAO, LIMITE_DIAS_SEM_VISITA } from './seed-data.js';
 
 // ---------------------------------------------------------------------------------------------
@@ -308,7 +308,7 @@ function renderDashboard() {
 async function renderAgenda() {
   const container = qs('#page-agenda');
   const f = state.agendaFiltros;
-  const jaCarregado = supabaseConfigurado ? await cronogramaJaCarregado().catch(() => true) : true;
+  const jaCarregado = firebaseConfigurado ? await cronogramaJaCarregado().catch(() => true) : true;
 
   let itens = [...state.agenda];
   if (f.data) itens = itens.filter((a) => a.data === f.data);
@@ -731,7 +731,7 @@ function init() {
   renderNav();
   initTema();
 
-  if (!supabaseConfigurado) {
+  if (!firebaseConfigurado) {
     qs('#aviso-config').classList.remove('hidden');
     irParaPagina((location.hash || '#dashboard').slice(1));
     return;
