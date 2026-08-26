@@ -601,49 +601,95 @@ function renderAgendaCalendario() {
   }));
 }
 
+// Tipos de atividade que envolvem deslocamento (têm ponto de saída/retorno próprios) — reunião/
+// café acontece num local fixo (a casa/comércio do anfitrião) e evento também não tem esse
+// vaivém, então só panfletagem e paredão mostram esses campos.
+const TIPOS_COM_DESLOCAMENTO = ['panfletagem', 'paredao'];
+
 function abrirModalAtividade(atividade = null) {
-  const ativas = state.pessoas.filter((p) => p.status === 'ativo' || (atividade?.pessoasIds || []).includes(p.id));
+  let pessoasSelecionadas = [...(atividade?.pessoasIds || [])];
+
+  function opcoesLocalidade(tipoAtiv) {
+    return state.localidades.filter((l) => l.tipo === tipoAtiv);
+  }
+
+  function atualizarLocalidades(tipoAtiv, manterSelecionada) {
+    const select = qs('#modal-box select[name="localidadeId"]');
+    if (!select) return;
+    const opcoes = opcoesLocalidade(tipoAtiv);
+    select.innerHTML = `<option value="">Selecione...</option>` +
+      opcoes.map((l) => `<option value="${l.id}">${esc(l.ra)}</option>`).join('');
+    if (manterSelecionada && opcoes.some((l) => l.id === manterSelecionada)) select.value = manterSelecionada;
+  }
+
+  function atualizarCamposDeslocamento(tipoAtiv) {
+    const bloco = qs('#bloco-deslocamento');
+    if (bloco) bloco.classList.toggle('hidden', !TIPOS_COM_DESLOCAMENTO.includes(tipoAtiv));
+  }
+
+  function pessoasDisponiveis() {
+    return state.pessoas.filter((p) => (p.status === 'ativo' || pessoasSelecionadas.includes(p.id)) && !pessoasSelecionadas.includes(p.id));
+  }
+
+  function renderPessoasVinculadas() {
+    const chips = qs('#chips-pessoas');
+    const select = qs('#select-add-pessoa');
+    if (!chips || !select) return;
+    chips.innerHTML = pessoasSelecionadas.length
+      ? pessoasSelecionadas.map((id) => `
+        <span class="badge bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400">
+          ${esc(pessoaNome(id))}
+          <button type="button" data-remover-pessoa="${id}" class="ml-0.5 text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-200">×</button>
+          <input type="hidden" name="pessoasIds" value="${id}" />
+        </span>`).join('')
+      : '<p class="text-xs text-slate-400">Nenhuma pessoa vinculada ainda.</p>';
+    select.innerHTML = `<option value="">+ Adicionar pessoa...</option>` +
+      pessoasDisponiveis().map((p) => `<option value="${p.id}">${esc(p.nome)}${p.status !== 'ativo' ? ' (inativo)' : ''}</option>`).join('');
+    chips.querySelectorAll('[data-remover-pessoa]').forEach((btn) => btn.addEventListener('click', () => {
+      pessoasSelecionadas = pessoasSelecionadas.filter((id) => id !== btn.dataset.removerPessoa);
+      renderPessoasVinculadas();
+    }));
+  }
+
+  const tipoInicial = atividade?.tipoAtividade || 'panfletagem';
   const html = `
     <h2 class="mb-4 text-lg font-semibold text-slate-900 dark:text-white">${atividade ? 'Editar atividade' : 'Nova atividade'}</h2>
     <form id="form-atividade" class="space-y-3">
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <label class="text-xs text-slate-500 dark:text-slate-400">Data *
           <input required type="date" name="data" value="${atividade?.data || state.agendaFiltros.data || hojeISO()}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
         </label>
         <label class="text-xs text-slate-500 dark:text-slate-400">Tipo de atividade *
-          <select required name="tipoAtividade" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900">
-            ${Object.entries(TIPO_ATIVIDADE).map(([v, t]) => `<option value="${v}" ${atividade?.tipoAtividade === v ? 'selected' : ''}>${t.label}</option>`).join('')}
+          <select required name="tipoAtividade" id="select-tipo-atividade" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900">
+            ${Object.entries(TIPO_ATIVIDADE).map(([v, t]) => `<option value="${v}" ${tipoInicial === v ? 'selected' : ''}>${t.label}</option>`).join('')}
           </select>
         </label>
       </div>
-      <label class="block text-xs text-slate-500 dark:text-slate-400">Localidade *
-        <select required name="localidadeId" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900">
-          <option value="">Selecione...</option>
-          ${state.localidades.map((l) => `<option value="${l.id}" ${atividade?.localidadeId === l.id ? 'selected' : ''}>${esc(l.ra)} (${TIPO_ATIVIDADE[l.tipo]?.label || l.tipo})</option>`).join('')}
-        </select>
+      <label class="block text-xs text-slate-500 dark:text-slate-400">RA (localidade) *
+        <select required name="localidadeId" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900"></select>
       </label>
       <label class="block text-xs text-slate-500 dark:text-slate-400">Equipe (rótulo livre, ex: Grupo 1)
         <input type="text" name="equipeLabel" value="${esc(atividade?.equipeLabel || '')}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
       </label>
       <div class="block text-xs text-slate-500 dark:text-slate-400">
         Pessoa(s) vinculada(s)
-        <div class="mt-1 max-h-32 overflow-y-auto rounded-lg border border-slate-200 p-2 dark:border-slate-800">
-          ${ativas.length ? ativas.map((p) => `
-            <label class="flex items-center gap-2 py-0.5 text-sm text-slate-700 dark:text-slate-200">
-              <input type="checkbox" name="pessoasIds" value="${p.id}" ${(atividade?.pessoasIds || []).includes(p.id) ? 'checked' : ''} />
-              ${esc(p.nome)}${p.status !== 'ativo' ? ' (inativo)' : ''}
-            </label>`).join('') : '<p class="text-slate-400">Nenhuma pessoa cadastrada ainda.</p>'}
+        <select id="select-add-pessoa" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900"></select>
+        <div id="chips-pessoas" class="mt-1.5 flex flex-wrap gap-1.5"></div>
+      </div>
+      <div id="bloco-deslocamento" class="space-y-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="text-xs text-slate-500 dark:text-slate-400">Ponto de saída <span class="text-slate-300">(local de encontro no paredão)</span>
+            <input type="text" name="pontoSaida" value="${esc(atividade?.pontoSaida ?? 'Comitê (Taguatinga)')}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+          </label>
+          <label class="text-xs text-slate-500 dark:text-slate-400">Ponto de retorno
+            <input type="text" name="pontoRetorno" value="${esc(atividade?.pontoRetorno ?? 'Comitê (Taguatinga)')}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+          </label>
         </div>
-      </div>
-      <div class="grid grid-cols-2 gap-3">
-        <label class="text-xs text-slate-500 dark:text-slate-400">Ponto de saída <span class="text-slate-300">(local de encontro no paredão)</span>
-          <input type="text" name="pontoSaida" value="${esc(atividade?.pontoSaida ?? 'Comitê (Taguatinga)')}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
-        </label>
-        <label class="text-xs text-slate-500 dark:text-slate-400">Ponto de retorno
-          <input type="text" name="pontoRetorno" value="${esc(atividade?.pontoRetorno ?? 'Comitê (Taguatinga)')}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+        <label class="block text-xs text-slate-500 dark:text-slate-400">Roteiro / trajeto <span class="text-slate-300">(ex: ruas do paredão)</span>
+          <textarea name="roteiro" rows="2" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900">${esc(atividade?.roteiro || '')}</textarea>
         </label>
       </div>
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <label class="text-xs text-slate-500 dark:text-slate-400">Horário de início
           <input type="time" name="horarioInicio" value="${esc(atividade?.horarioInicio ?? '13:30')}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
         </label>
@@ -656,9 +702,6 @@ function abrirModalAtividade(atividade = null) {
           ${Object.entries(STATUS_ATIVIDADE).map(([v, s]) => `<option value="${v}" ${(atividade?.status || 'nao_iniciado') === v ? 'selected' : ''}>${s.label}</option>`).join('')}
         </select>
       </label>
-      <label class="block text-xs text-slate-500 dark:text-slate-400">Roteiro / trajeto <span class="text-slate-300">(ex: ruas do paredão)</span>
-        <textarea name="roteiro" rows="2" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900">${esc(atividade?.roteiro || '')}</textarea>
-      </label>
       <label class="block text-xs text-slate-500 dark:text-slate-400">Observações
         <textarea name="observacoes" rows="2" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900">${esc(atividade?.observacoes || '')}</textarea>
       </label>
@@ -669,6 +712,17 @@ function abrirModalAtividade(atividade = null) {
     </form>
   `;
   abrirModal(html);
+  atualizarLocalidades(tipoInicial, atividade?.localidadeId);
+  atualizarCamposDeslocamento(tipoInicial);
+  renderPessoasVinculadas();
+
+  qs('#select-tipo-atividade').addEventListener('change', (e) => {
+    atualizarLocalidades(e.target.value);
+    atualizarCamposDeslocamento(e.target.value);
+  });
+  qs('#select-add-pessoa').addEventListener('change', (e) => {
+    if (e.target.value) { pessoasSelecionadas.push(e.target.value); renderPessoasVinculadas(); }
+  });
   qs('#btn-cancelar').addEventListener('click', fecharModal);
   qs('#form-atividade').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -769,7 +823,7 @@ function abrirModalPessoa(pessoa = null) {
           <option value="Apoio / logística"></option>
         </datalist>
       </label>
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <label class="text-xs text-slate-500 dark:text-slate-400">Data de contratação
           <input type="date" name="dataContratacao" value="${esc(pessoa?.dataContratacao || '')}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
         </label>
