@@ -5,10 +5,10 @@
 // dados são as regras de segurança do Firestore (Cloud Firestore → Regras no console), não o
 // sigilo destes valores.
 export const firebaseConfig = {
-  apiKey: 'COLE_AQUI_A_API_KEY',
-  authDomain: 'COLE_AQUI.firebaseapp.com',
-  projectId: 'COLE_AQUI_O_PROJECT_ID',
-  storageBucket: 'COLE_AQUI.appspot.com',
-  messagingSenderId: 'COLE_AQUI',
-  appId: 'COLE_AQUI',
+  apiKey: 'AIzaSyCyd1nZwyIWGdM8IDo6XWieMVnAFn7V2rw',
+  authDomain: 'asparestefanesampaio.firebaseapp.com',
+  projectId: 'asparestefanesampaio',
+  storageBucket: 'asparestefanesampaio.firebasestorage.app',
+  messagingSenderId: '552649799329',
+  appId: '1:552649799329:web:f4543be1bb6a5877ffa2e0',
 };
