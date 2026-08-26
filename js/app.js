@@ -23,7 +23,7 @@ const state = {
   agenda: [],
   pagina: 'dashboard',
   dashboardData: hojeISO(),
-  agendaView: 'lista',
+  agendaView: 'calendario',
   agendaMes: hojeISO().slice(0, 7),
   agendaFiltros: { data: hojeISO(), ra: '', pessoaId: '' },
   pessoasFiltroStatus: 'ativo',
@@ -37,11 +37,14 @@ const NAV = [
 ];
 
 const TIPO_ATIVIDADE = {
-  panfletagem: { label: 'Panfletagem', cor: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400', corBarra: 'bg-indigo-500', corPonto: 'bg-indigo-500' },
-  reuniao: { label: 'Reunião/café', cor: 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400', corBarra: 'bg-amber-500', corPonto: 'bg-amber-500' },
-  paredao: { label: 'Paredão', cor: 'bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400', corBarra: 'bg-rose-500', corPonto: 'bg-rose-500' },
-  evento: { label: 'Evento na RA', cor: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400', corBarra: 'bg-emerald-500', corPonto: 'bg-emerald-500' },
+  panfletagem: { label: 'Panfletagem', curto: 'Panf.', cor: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400', corBarra: 'bg-indigo-500', corPonto: 'bg-indigo-500' },
+  reuniao: { label: 'Reunião/café', curto: 'Reunião', cor: 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400', corBarra: 'bg-amber-500', corPonto: 'bg-amber-500' },
+  paredao: { label: 'Paredão', curto: 'Paredão', cor: 'bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400', corBarra: 'bg-rose-500', corPonto: 'bg-rose-500' },
+  evento: { label: 'Evento na RA', curto: 'Evento', cor: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400', corBarra: 'bg-emerald-500', corPonto: 'bg-emerald-500' },
 };
+
+// Ordem fixa de agrupamento visual no calendário (reunião/café, panfletagem, paredão, evento).
+const ORDEM_TIPO = ['reuniao', 'panfletagem', 'paredao', 'evento'];
 
 const STATUS_ATIVIDADE = {
   nao_iniciado: { label: 'Não iniciado', cor: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' },
@@ -190,21 +193,29 @@ function renderContadores() {
 // Dashboard / Resumo do dia
 // ---------------------------------------------------------------------------------------------
 
-function calcularAlertasRA() {
+function calcularStatusRAs() {
+  // Agrupa por nome de RA (não por localidade): uma RA pode ter mais de um ponto cadastrado
+  // (panfletagem, reunião/café, paredão), então a "última visita" da RA é a mais recente entre
+  // todas as atividades ligadas a qualquer um desses pontos.
   const hoje = hojeISO();
-  const alertas = [];
-  state.localidades.forEach((loc) => {
-    const visitas = state.agenda.filter((a) => a.localidadeId === loc.id && a.data <= hoje).map((a) => a.data).sort();
+  const ras = [...new Set(state.localidades.map((l) => l.ra))].sort();
+  const naoIniciadas = [];
+  const atrasadas = [];
+
+  ras.forEach((ra) => {
+    const idsDaRA = state.localidades.filter((l) => l.ra === ra).map((l) => l.id);
+    const visitas = state.agenda
+      .filter((a) => idsDaRA.includes(a.localidadeId) && a.data <= hoje)
+      .map((a) => a.data)
+      .sort();
     const ultima = visitas[visitas.length - 1];
-    if (!ultima) {
-      alertas.push({ ra: loc.ra, nivel: 'nunca', dias: null });
-      return;
-    }
+    if (!ultima) { naoIniciadas.push(ra); return; }
     const dias = diffDiasISO(ultima, hoje);
-    if (dias > LIMITE_DIAS_SEM_VISITA) alertas.push({ ra: loc.ra, nivel: 'atrasada', dias });
-    else if (dias >= LIMITE_DIAS_SEM_VISITA - 2) alertas.push({ ra: loc.ra, nivel: 'proxima', dias });
+    if (dias > LIMITE_DIAS_SEM_VISITA) atrasadas.push({ ra, dias });
   });
-  return alertas.sort((a, b) => (b.dias ?? 999) - (a.dias ?? 999));
+
+  atrasadas.sort((a, b) => b.dias - a.dias);
+  return { naoIniciadas, atrasadas };
 }
 
 function calcularVisitasPorRA() {
@@ -255,7 +266,7 @@ function renderDashboard() {
   const container = qs('#page-dashboard');
   const data = state.dashboardData;
   const doDia = state.agenda.filter((a) => a.data === data);
-  const alertas = calcularAlertasRA();
+  const { naoIniciadas, atrasadas } = calcularStatusRAs();
 
   const porTipo = {};
   doDia.forEach((a) => {
@@ -291,14 +302,21 @@ function renderDashboard() {
       ${mostrarMiniTrio ? `<br/>🔊 Mini trio (paredão) disponível desde ${formatDateBR(MINI_TRIO.disponivelDesde)}, das ${MINI_TRIO.inicio} às ${MINI_TRIO.fim}.` : ''}
     </div>
 
-    ${alertas.length ? `
-    <div class="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm dark:border-amber-900 dark:bg-amber-950/30">
-      <p class="mb-2 text-sm font-semibold text-amber-800 dark:text-amber-300">⚠️ RAs sem visita há ${LIMITE_DIAS_SEM_VISITA}+ dias (ou perto disso)</p>
-      <div class="flex flex-wrap gap-2">
-        ${alertas.map((a) => `
-          <span class="badge ${a.nivel === 'atrasada' ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'}">
-            ${esc(a.ra)} — ${a.nivel === 'nunca' ? 'nunca visitada' : `${a.dias} dia(s)`}
-          </span>`).join('')}
+    ${(naoIniciadas.length || atrasadas.length) ? `
+    <div class="grid gap-4 md:grid-cols-2">
+      <div class="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm dark:border-amber-900 dark:bg-amber-950/30">
+        <p class="mb-2 text-sm font-semibold text-amber-800 dark:text-amber-300">⏳ RAs não iniciadas (${naoIniciadas.length})</p>
+        ${naoIniciadas.length ? `
+        <div class="flex flex-wrap gap-2">
+          ${naoIniciadas.map((ra) => `<span class="badge bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400">${esc(ra)}</span>`).join('')}
+        </div>` : '<p class="text-xs text-amber-700/70 dark:text-amber-400/70">Todas as RAs já tiveram alguma visita.</p>'}
+      </div>
+      <div class="rounded-2xl border border-rose-200 bg-rose-50 p-4 shadow-sm dark:border-rose-900 dark:bg-rose-950/30">
+        <p class="mb-2 text-sm font-semibold text-rose-800 dark:text-rose-300">🚨 RAs sem visita há mais de ${LIMITE_DIAS_SEM_VISITA} dias (${atrasadas.length})</p>
+        ${atrasadas.length ? `
+        <div class="flex flex-wrap gap-2">
+          ${atrasadas.map((a) => `<span class="badge bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400">${esc(a.ra)} — ${a.dias} dia(s)</span>`).join('')}
+        </div>` : '<p class="text-xs text-rose-700/70 dark:text-rose-400/70">Nenhuma RA passou do limite.</p>'}
       </div>
     </div>` : ''}
 
@@ -357,8 +375,8 @@ async function renderAgenda() {
     <div class="flex flex-wrap items-end justify-between gap-3">
       <div class="flex flex-wrap items-end gap-3">
         <div class="inline-flex rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-800 dark:bg-slate-900">
-          <button data-view="lista" class="rounded-md px-3 py-1.5 text-xs font-medium transition ${state.agendaView === 'lista' ? 'bg-indigo-600 text-white' : 'text-slate-500 dark:text-slate-400'}">Lista</button>
           <button data-view="calendario" class="rounded-md px-3 py-1.5 text-xs font-medium transition ${state.agendaView === 'calendario' ? 'bg-indigo-600 text-white' : 'text-slate-500 dark:text-slate-400'}">Calendário</button>
+          <button data-view="lista" class="rounded-md px-3 py-1.5 text-xs font-medium transition ${state.agendaView === 'lista' ? 'bg-indigo-600 text-white' : 'text-slate-500 dark:text-slate-400'}">Lista</button>
         </div>
         ${state.agendaView === 'lista' ? `
         <label class="text-xs text-slate-500 dark:text-slate-400">Data
@@ -525,17 +543,23 @@ function renderAgendaCalendario() {
       <div class="grid grid-cols-7 gap-1.5">
         ${dias.map((iso) => {
           if (!iso) return '<div></div>';
-          const atividadesDia = (porDia[iso] || []).slice().sort((a, b) => (a.horarioInicio || '').localeCompare(b.horarioInicio || ''));
+          const atividadesDia = (porDia[iso] || []).slice().sort((a, b) => {
+            const ordemA = ORDEM_TIPO.indexOf(a.tipoAtividade);
+            const ordemB = ORDEM_TIPO.indexOf(b.tipoAtividade);
+            return ordemA - ordemB || (a.horarioInicio || '').localeCompare(b.horarioInicio || '');
+          });
           const ehHoje = iso === hoje;
+          const LIMITE_VISIVEL = 4;
           return `
-          <button data-dia="${iso}" class="min-h-[76px] rounded-lg border p-1.5 text-left align-top transition hover:border-indigo-300 dark:hover:border-indigo-700 ${ehHoje ? 'border-indigo-400 bg-indigo-50/60 dark:border-indigo-600 dark:bg-indigo-500/10' : 'border-slate-100 dark:border-slate-800'}">
+          <button data-dia="${iso}" class="min-h-[88px] rounded-lg border p-1.5 text-left align-top transition hover:border-indigo-300 dark:hover:border-indigo-700 ${ehHoje ? 'border-indigo-400 bg-indigo-50/60 dark:border-indigo-600 dark:bg-indigo-500/10' : 'border-slate-100 dark:border-slate-800'}">
             <p class="mb-1 text-[11px] font-medium ${ehHoje ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}">${Number(iso.slice(-2))}</p>
             <div class="space-y-0.5">
-              ${atividadesDia.slice(0, 3).map((a) => {
+              ${atividadesDia.slice(0, LIMITE_VISIVEL).map((a) => {
                 const loc = localidadePorId(a.localidadeId);
-                return `<div class="truncate rounded px-1 py-0.5 text-[10px] font-medium ${TIPO_ATIVIDADE[a.tipoAtividade]?.cor || ''}">${esc(loc?.ra || '—')}</div>`;
+                const t = TIPO_ATIVIDADE[a.tipoAtividade];
+                return `<div class="truncate rounded px-1 py-0.5 text-[10px] font-medium ${t?.cor || ''}" title="${esc(t?.label || a.tipoAtividade)} · ${esc(loc?.ra || '')}">${esc(t?.curto || a.tipoAtividade)} · ${esc(loc?.ra || '—')}</div>`;
               }).join('')}
-              ${atividadesDia.length > 3 ? `<p class="text-[10px] text-slate-400">+${atividadesDia.length - 3} mais</p>` : ''}
+              ${atividadesDia.length > LIMITE_VISIVEL ? `<p class="text-[10px] text-slate-400">+${atividadesDia.length - LIMITE_VISIVEL} mais</p>` : ''}
             </div>
           </button>`;
         }).join('')}
