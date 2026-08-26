@@ -11,7 +11,7 @@ import {
   carregarCronogramaPadrao,
   cronogramaJaCarregado,
 } from './firestore.js';
-import { CAPACIDADE_PANFLETAGEM, MINI_TRIO, PRAZO_FINAL_VISITAS, PRAZO_VOTACAO, LIMITE_DIAS_SEM_VISITA } from './seed-data.js';
+import { MINI_TRIO, PRAZO_FINAL_VISITAS, PRAZO_VOTACAO, LIMITE_DIAS_SEM_VISITA } from './seed-data.js';
 
 // ---------------------------------------------------------------------------------------------
 // Estado
@@ -23,6 +23,8 @@ const state = {
   agenda: [],
   pagina: 'dashboard',
   dashboardData: hojeISO(),
+  agendaView: 'lista',
+  agendaMes: hojeISO().slice(0, 7),
   agendaFiltros: { data: hojeISO(), ra: '', pessoaId: '' },
   pessoasFiltroStatus: 'ativo',
 };
@@ -35,10 +37,10 @@ const NAV = [
 ];
 
 const TIPO_ATIVIDADE = {
-  panfletagem: { label: 'Panfletagem', cor: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400' },
-  reuniao: { label: 'Reunião/café', cor: 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400' },
-  paredao: { label: 'Paredão', cor: 'bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400' },
-  evento: { label: 'Evento na RA', cor: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400' },
+  panfletagem: { label: 'Panfletagem', cor: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400', corBarra: 'bg-indigo-500', corPonto: 'bg-indigo-500' },
+  reuniao: { label: 'Reunião/café', cor: 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400', corBarra: 'bg-amber-500', corPonto: 'bg-amber-500' },
+  paredao: { label: 'Paredão', cor: 'bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400', corBarra: 'bg-rose-500', corPonto: 'bg-rose-500' },
+  evento: { label: 'Evento na RA', cor: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400', corBarra: 'bg-emerald-500', corPonto: 'bg-emerald-500' },
 };
 
 const STATUS_ATIVIDADE = {
@@ -148,7 +150,7 @@ const TITULOS = {
   dashboard: ['Resumo do dia', 'Contadores, alertas de RA e panorama das atividades'],
   agenda: ['Agenda diária', 'Cadastre e acompanhe panfletagem, reuniões, paredão e eventos'],
   pessoas: ['Pessoas', 'Equipe contratada — cadastro, função e status'],
-  localidades: ['Localidades', 'Pontos de panfletagem e de reunião/café por RA'],
+  localidades: ['Localidades', 'Pontos de panfletagem, reunião/café e paredão por RA'],
 };
 
 function irParaPagina(pagina) {
@@ -205,6 +207,50 @@ function calcularAlertasRA() {
   return alertas.sort((a, b) => (b.dias ?? 999) - (a.dias ?? 999));
 }
 
+function calcularVisitasPorRA() {
+  const porRA = {};
+  state.localidades.forEach((loc) => { porRA[loc.ra] = porRA[loc.ra] || { total: 0, porTipo: {} }; });
+  state.agenda.forEach((a) => {
+    const loc = localidadePorId(a.localidadeId);
+    const ra = loc ? loc.ra : null;
+    if (!ra) return;
+    porRA[ra] = porRA[ra] || { total: 0, porTipo: {} };
+    porRA[ra].total++;
+    porRA[ra].porTipo[a.tipoAtividade] = (porRA[ra].porTipo[a.tipoAtividade] || 0) + 1;
+  });
+  return Object.entries(porRA)
+    .map(([ra, dados]) => ({ ra, ...dados }))
+    .sort((a, b) => b.total - a.total || a.ra.localeCompare(b.ra));
+}
+
+function renderGraficoVisitasPorRA() {
+  const linhas = calcularVisitasPorRA();
+  if (!linhas.length) return '<p class="text-sm text-slate-400">Cadastre localidades para ver o panorama por RA.</p>';
+  const maxTotal = Math.max(...linhas.map((l) => l.total), 1);
+  const legenda = Object.entries(TIPO_ATIVIDADE).map(([tipo, t]) => `
+    <span class="inline-flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+      <span class="h-2.5 w-2.5 rounded-full ${t.corBarra}"></span>${t.label}
+    </span>`).join('');
+
+  const barras = linhas.map((l) => {
+    const larguraTotal = (l.total / maxTotal) * 100;
+    const segmentos = Object.entries(l.porTipo).map(([tipo, qtd]) => {
+      const pct = (qtd / l.total) * 100;
+      return `<div class="h-full ${TIPO_ATIVIDADE[tipo]?.corBarra || 'bg-slate-400'}" style="width:${pct}%" title="${TIPO_ATIVIDADE[tipo]?.label || tipo}: ${qtd}"></div>`;
+    }).join('');
+    return `
+      <div class="flex items-center gap-3">
+        <span class="w-36 shrink-0 truncate text-xs text-slate-600 dark:text-slate-300" title="${esc(l.ra)}">${esc(l.ra)}</span>
+        <div class="h-4 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+          <div class="flex h-full overflow-hidden rounded-full" style="width:${larguraTotal}%">${segmentos}</div>
+        </div>
+        <span class="w-6 shrink-0 text-right text-xs font-medium text-slate-500 dark:text-slate-400">${l.total}</span>
+      </div>`;
+  }).join('');
+
+  return `<div class="flex flex-wrap gap-x-4 gap-y-1 pb-3">${legenda}</div><div class="space-y-2.5">${barras}</div>`;
+}
+
 function renderDashboard() {
   const container = qs('#page-dashboard');
   const data = state.dashboardData;
@@ -218,18 +264,13 @@ function renderDashboard() {
     porTipo[a.tipoAtividade][a.status]++;
   });
 
-  const porRA = {};
+  const porRADia = {};
   doDia.forEach((a) => {
     const loc = localidadePorId(a.localidadeId);
     const nome = loc ? loc.ra : '(sem localidade)';
-    porRA[nome] = porRA[nome] || [];
-    porRA[nome].push(a);
+    porRADia[nome] = porRADia[nome] || [];
+    porRADia[nome].push(a);
   });
-
-  const pessoasPanfletagemHoje = new Set();
-  doDia.filter((a) => a.tipoAtividade === 'panfletagem').forEach((a) => (a.pessoasIds || []).forEach((id) => pessoasPanfletagemHoje.add(id)));
-  const nPessoasCapacidade = pessoasPanfletagemHoje.size || CAPACIDADE_PANFLETAGEM.pessoas;
-  const panfletosEstimados = nPessoasCapacidade * CAPACIDADE_PANFLETAGEM.panfletosPorPessoa;
 
   const hoje = hojeISO();
   const diasParaPrazo = diffDiasISO(hoje, PRAZO_FINAL_VISITAS);
@@ -261,19 +302,14 @@ function renderDashboard() {
       </div>
     </div>` : ''}
 
-    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div class="grid gap-4 sm:grid-cols-2">
       <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <p class="text-xs font-medium uppercase tracking-wide text-slate-400">Atividades no dia</p>
         <p class="mt-2 text-3xl font-semibold text-indigo-600 dark:text-indigo-400">${doDia.length}</p>
       </div>
       <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <p class="text-xs font-medium uppercase tracking-wide text-slate-400">RAs cobertas no dia</p>
-        <p class="mt-2 text-3xl font-semibold text-emerald-600 dark:text-emerald-400">${Object.keys(porRA).length}</p>
-      </div>
-      <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:col-span-2">
-        <p class="text-xs font-medium uppercase tracking-wide text-slate-400">Capacidade estimada de panfletagem</p>
-        <p class="mt-2 text-3xl font-semibold text-amber-600 dark:text-amber-400">${panfletosEstimados.toLocaleString('pt-BR')} <span class="text-sm font-normal text-slate-400">panfletos/dia</span></p>
-        <p class="mt-1 text-xs text-slate-400">${nPessoasCapacidade} pessoa(s) × ~${CAPACIDADE_PANFLETAGEM.panfletosPorPessoa} panfletos (referência: 30 pessoas × 266 = ~7.980/dia)</p>
+        <p class="mt-2 text-3xl font-semibold text-emerald-600 dark:text-emerald-400">${Object.keys(porRADia).length}</p>
       </div>
     </div>
 
@@ -287,13 +323,19 @@ function renderDashboard() {
           </div>`).join('') : '<p class="text-sm text-slate-400">Nenhuma atividade nesta data.</p>'}
       </div>
       <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <p class="mb-3 text-sm font-semibold text-slate-900 dark:text-white">Por RA</p>
-        ${Object.keys(porRA).length ? Object.entries(porRA).map(([ra, itens]) => `
+        <p class="mb-3 text-sm font-semibold text-slate-900 dark:text-white">Por RA (neste dia)</p>
+        ${Object.keys(porRADia).length ? Object.entries(porRADia).map(([ra, itens]) => `
           <div class="mb-2 rounded-xl border border-slate-100 px-3 py-2 dark:border-slate-800">
             <p class="text-sm font-medium text-slate-800 dark:text-slate-100">${esc(ra)}</p>
             <p class="text-xs text-slate-500 dark:text-slate-400">${itens.map((i) => `${TIPO_ATIVIDADE[i.tipoAtividade]?.label || i.tipoAtividade} · ${STATUS_ATIVIDADE[i.status]?.label || i.status}`).join(' — ')}</p>
           </div>`).join('') : '<p class="text-sm text-slate-400">Nenhuma atividade nesta data.</p>'}
       </div>
+    </div>
+
+    <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <p class="mb-1 text-sm font-semibold text-slate-900 dark:text-white">Panorama geral — atividades por RA</p>
+      <p class="mb-3 text-xs text-slate-400">Todas as datas cadastradas, por RA e tipo de atividade</p>
+      ${renderGraficoVisitasPorRA()}
     </div>
   `;
 
@@ -309,21 +351,19 @@ async function renderAgenda() {
   const container = qs('#page-agenda');
   const f = state.agendaFiltros;
   const jaCarregado = firebaseConfigurado ? await cronogramaJaCarregado().catch(() => true) : true;
-
-  let itens = [...state.agenda];
-  if (f.data) itens = itens.filter((a) => a.data === f.data);
-  if (f.ra) itens = itens.filter((a) => localidadePorId(a.localidadeId)?.ra === f.ra);
-  if (f.pessoaId) itens = itens.filter((a) => (a.pessoasIds || []).includes(f.pessoaId));
-  itens.sort((a, b) => (a.data + a.horarioInicio).localeCompare(b.data + b.horarioInicio));
-
   const ras = [...new Set(state.localidades.map((l) => l.ra))].sort();
 
   container.innerHTML = `
     <div class="flex flex-wrap items-end justify-between gap-3">
       <div class="flex flex-wrap items-end gap-3">
+        <div class="inline-flex rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-800 dark:bg-slate-900">
+          <button data-view="lista" class="rounded-md px-3 py-1.5 text-xs font-medium transition ${state.agendaView === 'lista' ? 'bg-indigo-600 text-white' : 'text-slate-500 dark:text-slate-400'}">Lista</button>
+          <button data-view="calendario" class="rounded-md px-3 py-1.5 text-xs font-medium transition ${state.agendaView === 'calendario' ? 'bg-indigo-600 text-white' : 'text-slate-500 dark:text-slate-400'}">Calendário</button>
+        </div>
+        ${state.agendaView === 'lista' ? `
         <label class="text-xs text-slate-500 dark:text-slate-400">Data
           <input type="date" id="f-data" value="${f.data}" class="mt-1 block rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-900" />
-        </label>
+        </label>` : ''}
         <label class="text-xs text-slate-500 dark:text-slate-400">RA
           <select id="f-ra" class="mt-1 block rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <option value="">Todas</option>
@@ -336,7 +376,7 @@ async function renderAgenda() {
             ${state.pessoas.map((p) => `<option value="${p.id}" ${f.pessoaId === p.id ? 'selected' : ''}>${esc(p.nome)}</option>`).join('')}
           </select>
         </label>
-        <button id="f-limpar" class="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">Limpar filtros</button>
+        ${state.agendaView === 'lista' ? `<button id="f-limpar" class="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">Limpar filtros</button>` : ''}
       </div>
       <div class="flex gap-2">
         ${!jaCarregado ? `<button id="btn-seed" class="rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-100 dark:border-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-400">Carregar cronograma padrão</button>` : ''}
@@ -344,8 +384,45 @@ async function renderAgenda() {
       </div>
     </div>
 
+    <div id="agenda-corpo" class="mt-4"></div>
+  `;
+
+  qs('[data-view="lista"]').addEventListener('click', () => { state.agendaView = 'lista'; renderAgenda(); });
+  qs('[data-view="calendario"]').addEventListener('click', () => { state.agendaView = 'calendario'; renderAgenda(); });
+  qs('#f-ra').addEventListener('change', (e) => { state.agendaFiltros.ra = e.target.value; renderAgendaCorpo(); });
+  qs('#f-pessoa').addEventListener('change', (e) => { state.agendaFiltros.pessoaId = e.target.value; renderAgendaCorpo(); });
+  qs('#f-data')?.addEventListener('change', (e) => { state.agendaFiltros.data = e.target.value; renderAgendaCorpo(); });
+  qs('#f-limpar')?.addEventListener('click', () => { state.agendaFiltros = { data: '', ra: '', pessoaId: '' }; renderAgendaCorpo(); });
+  qs('#btn-nova-atividade').addEventListener('click', () => abrirModalAtividade());
+  qs('#btn-seed')?.addEventListener('click', async () => {
+    try {
+      const r = await carregarCronogramaPadrao();
+      toast(`Cronograma carregado: ${r.localidadesCriadas} localidade(s) e ${r.atividadesCriadas} atividade(s) novas.`);
+      renderAgenda();
+    } catch (e) { toast(e.message); }
+  });
+
+  renderAgendaCorpo();
+}
+
+function renderAgendaCorpo() {
+  if (state.agendaView === 'calendario') renderAgendaCalendario();
+  else renderAgendaLista();
+}
+
+function renderAgendaLista() {
+  const container = qs('#agenda-corpo');
+  const f = state.agendaFiltros;
+
+  let itens = [...state.agenda];
+  if (f.data) itens = itens.filter((a) => a.data === f.data);
+  if (f.ra) itens = itens.filter((a) => localidadePorId(a.localidadeId)?.ra === f.ra);
+  if (f.pessoaId) itens = itens.filter((a) => (a.pessoasIds || []).includes(f.pessoaId));
+  itens.sort((a, b) => (a.data + a.horarioInicio).localeCompare(b.data + b.horarioInicio));
+
+  container.innerHTML = `
     <div class="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <table class="w-full min-w-[860px] text-left text-sm">
+      <table class="w-full min-w-[900px] text-left text-sm">
         <thead class="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400 dark:border-slate-800">
           <tr>
             <th class="px-4 py-3">Data</th>
@@ -353,7 +430,7 @@ async function renderAgenda() {
             <th class="px-4 py-3">RA / Localidade</th>
             <th class="px-4 py-3">Equipe / Pessoas</th>
             <th class="px-4 py-3">Saída → Retorno</th>
-            <th class="px-4 py-3">Início</th>
+            <th class="px-4 py-3">Horário</th>
             <th class="px-4 py-3">Status</th>
             <th class="px-4 py-3"></th>
           </tr>
@@ -364,19 +441,6 @@ async function renderAgenda() {
       </table>
     </div>
   `;
-
-  qs('#f-data').addEventListener('change', (e) => { state.agendaFiltros.data = e.target.value; renderAgenda(); });
-  qs('#f-ra').addEventListener('change', (e) => { state.agendaFiltros.ra = e.target.value; renderAgenda(); });
-  qs('#f-pessoa').addEventListener('change', (e) => { state.agendaFiltros.pessoaId = e.target.value; renderAgenda(); });
-  qs('#f-limpar').addEventListener('click', () => { state.agendaFiltros = { data: '', ra: '', pessoaId: '' }; renderAgenda(); });
-  qs('#btn-nova-atividade').addEventListener('click', () => abrirModalAtividade());
-  qs('#btn-seed')?.addEventListener('click', async () => {
-    try {
-      const r = await carregarCronogramaPadrao();
-      toast(`Cronograma carregado: ${r.localidadesCriadas} localidade(s) e ${r.atividadesCriadas} atividade(s) novas.`);
-      renderAgenda();
-    } catch (e) { toast(e.message); }
-  });
 
   container.querySelectorAll('[data-editar-atividade]').forEach((btn) => {
     btn.addEventListener('click', () => abrirModalAtividade(state.agenda.find((a) => a.id === btn.dataset.editarAtividade)));
@@ -393,6 +457,7 @@ function rowAtividade(a) {
   const loc = localidadePorId(a.localidadeId);
   const pessoas = (a.pessoasIds || []).map(pessoaNome);
   const equipe = [a.equipeLabel, ...pessoas].filter(Boolean).join(' · ') || '—';
+  const horario = a.horarioRetorno ? `${esc(a.horarioInicio || '—')} → ${esc(a.horarioRetorno)}` : esc(a.horarioInicio || '—');
   return `
     <tr class="border-b border-slate-50 last:border-0 dark:border-slate-800/60">
       <td class="px-4 py-3 whitespace-nowrap">${formatDateBR(a.data)}${a.visita ? `<br/><span class="text-[11px] text-slate-400">${esc(a.visita)}</span>` : ''}</td>
@@ -400,7 +465,7 @@ function rowAtividade(a) {
       <td class="px-4 py-3">${esc(loc?.ra || '—')}</td>
       <td class="px-4 py-3">${esc(equipe)}</td>
       <td class="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">${esc(a.pontoSaida || '—')} → ${esc(a.pontoRetorno || '—')}</td>
-      <td class="px-4 py-3 whitespace-nowrap">${esc(a.horarioInicio || '—')}</td>
+      <td class="px-4 py-3 whitespace-nowrap">${horario}</td>
       <td class="px-4 py-3">
         <select data-status-atividade="${a.id}" class="rounded-lg border px-2 py-1 text-xs font-semibold ${STATUS_ATIVIDADE[a.status]?.cor || ''}">
           ${Object.entries(STATUS_ATIVIDADE).map(([v, s]) => `<option value="${v}" ${a.status === v ? 'selected' : ''}>${s.label}</option>`).join('')}
@@ -410,6 +475,87 @@ function rowAtividade(a) {
         <button data-editar-atividade="${a.id}" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Editar</button>
       </td>
     </tr>`;
+}
+
+// ---- Calendário ------------------------------------------------------------------------------
+
+const NOMES_MES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+function diasDoMes(mesISO) {
+  const [ano, mes] = mesISO.split('-').map(Number);
+  const primeiro = new Date(ano, mes - 1, 1);
+  const ultimoDia = new Date(ano, mes, 0).getDate();
+  const dias = [];
+  for (let i = 0; i < primeiro.getDay(); i++) dias.push(null);
+  for (let d = 1; d <= ultimoDia; d++) dias.push(`${ano}-${String(mes).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+  return dias;
+}
+
+function mudarMes(mesISO, delta) {
+  const [ano, mes] = mesISO.split('-').map(Number);
+  const d = new Date(ano, mes - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function renderAgendaCalendario() {
+  const container = qs('#agenda-corpo');
+  const f = state.agendaFiltros;
+
+  let itens = [...state.agenda];
+  if (f.ra) itens = itens.filter((a) => localidadePorId(a.localidadeId)?.ra === f.ra);
+  if (f.pessoaId) itens = itens.filter((a) => (a.pessoasIds || []).includes(f.pessoaId));
+
+  const porDia = {};
+  itens.forEach((a) => { (porDia[a.data] = porDia[a.data] || []).push(a); });
+
+  const dias = diasDoMes(state.agendaMes);
+  const hoje = hojeISO();
+  const [ano, mes] = state.agendaMes.split('-').map(Number);
+
+  container.innerHTML = `
+    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div class="mb-3 flex items-center justify-between">
+        <button id="mes-anterior" class="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">‹</button>
+        <p class="text-sm font-semibold text-slate-800 dark:text-slate-100">${NOMES_MES[mes - 1]} de ${ano}</p>
+        <button id="mes-proximo" class="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800">›</button>
+      </div>
+      <div class="mb-1 grid grid-cols-7 gap-1.5 text-center text-[11px] font-medium text-slate-400">
+        ${['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((d) => `<div>${d}</div>`).join('')}
+      </div>
+      <div class="grid grid-cols-7 gap-1.5">
+        ${dias.map((iso) => {
+          if (!iso) return '<div></div>';
+          const atividadesDia = (porDia[iso] || []).slice().sort((a, b) => (a.horarioInicio || '').localeCompare(b.horarioInicio || ''));
+          const ehHoje = iso === hoje;
+          return `
+          <button data-dia="${iso}" class="min-h-[76px] rounded-lg border p-1.5 text-left align-top transition hover:border-indigo-300 dark:hover:border-indigo-700 ${ehHoje ? 'border-indigo-400 bg-indigo-50/60 dark:border-indigo-600 dark:bg-indigo-500/10' : 'border-slate-100 dark:border-slate-800'}">
+            <p class="mb-1 text-[11px] font-medium ${ehHoje ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}">${Number(iso.slice(-2))}</p>
+            <div class="space-y-0.5">
+              ${atividadesDia.slice(0, 3).map((a) => {
+                const loc = localidadePorId(a.localidadeId);
+                return `<div class="truncate rounded px-1 py-0.5 text-[10px] font-medium ${TIPO_ATIVIDADE[a.tipoAtividade]?.cor || ''}">${esc(loc?.ra || '—')}</div>`;
+              }).join('')}
+              ${atividadesDia.length > 3 ? `<p class="text-[10px] text-slate-400">+${atividadesDia.length - 3} mais</p>` : ''}
+            </div>
+          </button>`;
+        }).join('')}
+      </div>
+      <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-100 pt-3 dark:border-slate-800">
+        ${Object.entries(TIPO_ATIVIDADE).map(([, t]) => `
+          <span class="inline-flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+            <span class="h-2.5 w-2.5 rounded-full ${t.corBarra}"></span>${t.label}
+          </span>`).join('')}
+      </div>
+    </div>
+  `;
+
+  qs('#mes-anterior').addEventListener('click', () => { state.agendaMes = mudarMes(state.agendaMes, -1); renderAgendaCalendario(); });
+  qs('#mes-proximo').addEventListener('click', () => { state.agendaMes = mudarMes(state.agendaMes, 1); renderAgendaCalendario(); });
+  container.querySelectorAll('[data-dia]').forEach((btn) => btn.addEventListener('click', () => {
+    state.agendaFiltros.data = btn.dataset.dia;
+    state.agendaView = 'lista';
+    renderAgenda();
+  }));
 }
 
 function abrirModalAtividade(atividade = null) {
@@ -447,7 +593,7 @@ function abrirModalAtividade(atividade = null) {
         </div>
       </div>
       <div class="grid grid-cols-2 gap-3">
-        <label class="text-xs text-slate-500 dark:text-slate-400">Ponto de saída
+        <label class="text-xs text-slate-500 dark:text-slate-400">Ponto de saída <span class="text-slate-300">(local de encontro no paredão)</span>
           <input type="text" name="pontoSaida" value="${esc(atividade?.pontoSaida ?? 'Comitê (Taguatinga)')}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
         </label>
         <label class="text-xs text-slate-500 dark:text-slate-400">Ponto de retorno
@@ -458,12 +604,18 @@ function abrirModalAtividade(atividade = null) {
         <label class="text-xs text-slate-500 dark:text-slate-400">Horário de início
           <input type="time" name="horarioInicio" value="${esc(atividade?.horarioInicio ?? '13:30')}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
         </label>
-        <label class="text-xs text-slate-500 dark:text-slate-400">Status
-          <select name="status" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900">
-            ${Object.entries(STATUS_ATIVIDADE).map(([v, s]) => `<option value="${v}" ${(atividade?.status || 'nao_iniciado') === v ? 'selected' : ''}>${s.label}</option>`).join('')}
-          </select>
+        <label class="text-xs text-slate-500 dark:text-slate-400">Horário de retorno (planejado)
+          <input type="time" name="horarioRetorno" value="${esc(atividade?.horarioRetorno || '')}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
         </label>
       </div>
+      <label class="block text-xs text-slate-500 dark:text-slate-400">Status
+        <select name="status" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900">
+          ${Object.entries(STATUS_ATIVIDADE).map(([v, s]) => `<option value="${v}" ${(atividade?.status || 'nao_iniciado') === v ? 'selected' : ''}>${s.label}</option>`).join('')}
+        </select>
+      </label>
+      <label class="block text-xs text-slate-500 dark:text-slate-400">Roteiro / trajeto <span class="text-slate-300">(ex: ruas do paredão)</span>
+        <textarea name="roteiro" rows="2" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900">${esc(atividade?.roteiro || '')}</textarea>
+      </label>
       <label class="block text-xs text-slate-500 dark:text-slate-400">Observações
         <textarea name="observacoes" rows="2" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900">${esc(atividade?.observacoes || '')}</textarea>
       </label>
@@ -487,7 +639,9 @@ function abrirModalAtividade(atividade = null) {
       pontoSaida: fd.get('pontoSaida') || '',
       pontoRetorno: fd.get('pontoRetorno') || '',
       horarioInicio: fd.get('horarioInicio') || '',
+      horarioRetorno: fd.get('horarioRetorno') || '',
       status: fd.get('status'),
+      roteiro: fd.get('roteiro') || '',
       observacoes: fd.get('observacoes') || '',
     };
     try {
@@ -523,7 +677,7 @@ function renderPessoas() {
     <div class="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <table class="w-full min-w-[600px] text-left text-sm">
         <thead class="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400 dark:border-slate-800">
-          <tr><th class="px-4 py-3">Nome</th><th class="px-4 py-3">Contato</th><th class="px-4 py-3">Função</th><th class="px-4 py-3">Status</th><th class="px-4 py-3"></th></tr>
+          <tr><th class="px-4 py-3">Nome</th><th class="px-4 py-3">Contato</th><th class="px-4 py-3">Função</th><th class="px-4 py-3">Contratado(a) em</th><th class="px-4 py-3">Status</th><th class="px-4 py-3"></th></tr>
         </thead>
         <tbody>
           ${lista.length ? lista.map((p) => `
@@ -531,12 +685,13 @@ function renderPessoas() {
               <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">${esc(p.nome)}</td>
               <td class="px-4 py-3 text-slate-500 dark:text-slate-400">${esc(p.contato || '—')}</td>
               <td class="px-4 py-3 text-slate-500 dark:text-slate-400">${esc(p.funcao || '—')}</td>
+              <td class="px-4 py-3 text-slate-500 dark:text-slate-400">${formatDateBR(p.dataContratacao)}</td>
               <td class="px-4 py-3"><span class="badge ${p.status === 'ativo' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}">${p.status === 'ativo' ? 'Ativo' : 'Inativo'}</span></td>
               <td class="px-4 py-3 text-right whitespace-nowrap">
                 <button data-editar-pessoa="${p.id}" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Editar</button>
                 <button data-toggle-pessoa="${p.id}" data-status="${p.status}" class="ml-3 text-xs font-medium text-slate-500 hover:underline dark:text-slate-400">${p.status === 'ativo' ? 'Inativar' : 'Ativar'}</button>
               </td>
-            </tr>`).join('') : `<tr><td colspan="5" class="px-4 py-8 text-center text-slate-400">Nenhuma pessoa cadastrada.</td></tr>`}
+            </tr>`).join('') : `<tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">Nenhuma pessoa cadastrada.</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -571,12 +726,17 @@ function abrirModalPessoa(pessoa = null) {
           <option value="Apoio / logística"></option>
         </datalist>
       </label>
-      <label class="block text-xs text-slate-500 dark:text-slate-400">Status
-        <select name="status" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900">
-          <option value="ativo" ${(pessoa?.status || 'ativo') === 'ativo' ? 'selected' : ''}>Ativo</option>
-          <option value="inativo" ${pessoa?.status === 'inativo' ? 'selected' : ''}>Inativo</option>
-        </select>
-      </label>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="text-xs text-slate-500 dark:text-slate-400">Data de contratação
+          <input type="date" name="dataContratacao" value="${esc(pessoa?.dataContratacao || '')}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+        </label>
+        <label class="text-xs text-slate-500 dark:text-slate-400">Status
+          <select name="status" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900">
+            <option value="ativo" ${(pessoa?.status || 'ativo') === 'ativo' ? 'selected' : ''}>Ativo</option>
+            <option value="inativo" ${pessoa?.status === 'inativo' ? 'selected' : ''}>Inativo</option>
+          </select>
+        </label>
+      </div>
       <div class="flex justify-end gap-2 pt-2">
         <button type="button" id="btn-cancelar" class="rounded-xl px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Cancelar</button>
         <button type="submit" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">Salvar</button>
@@ -588,7 +748,7 @@ function abrirModalPessoa(pessoa = null) {
   qs('#form-pessoa').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    const dados = { nome: fd.get('nome').trim(), contato: fd.get('contato') || '', funcao: fd.get('funcao') || '', status: fd.get('status') };
+    const dados = { nome: fd.get('nome').trim(), contato: fd.get('contato') || '', funcao: fd.get('funcao') || '', dataContratacao: fd.get('dataContratacao') || '', status: fd.get('status') };
     try {
       await salvarPessoa(dados, pessoa?.id);
       toast('Pessoa salva.');
@@ -643,6 +803,7 @@ function abrirModalLocalidade(localidade = null) {
         <select required name="tipo" id="loc-tipo" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900">
           <option value="panfletagem" ${(localidade?.tipo || 'panfletagem') === 'panfletagem' ? 'selected' : ''}>Panfletagem</option>
           <option value="reuniao" ${localidade?.tipo === 'reuniao' ? 'selected' : ''}>Reunião/café</option>
+          <option value="paredao" ${localidade?.tipo === 'paredao' ? 'selected' : ''}>Paredão</option>
         </select>
       </label>
       <label class="block text-xs text-slate-500 dark:text-slate-400">Endereço/referência

@@ -32,28 +32,37 @@ clicável para criar o projeto no Firebase, sem precisar programar.
 `nome`, `contato`, `funcao`, `status` (`ativo` | `inativo`).
 
 **`localidades`**
-`ra` (região administrativa), `tipo` (`panfletagem` | `reuniao`), `endereco`,
-`anfitriaoNome`/`anfitriaoContato` (só relevantes quando `tipo === 'reuniao'`).
+`ra` (região administrativa), `tipo` (`panfletagem` | `reuniao` | `paredao`), `endereco`,
+`anfitriaoNome`/`anfitriaoContato` (só relevantes quando `tipo === 'reuniao'`). Uma RA pode ter
+vários pontos cadastrados (um de cada tipo, ou mais de um do mesmo tipo em visitas diferentes).
 
 **`agenda`**
 `data` (`AAAA-MM-DD`), `tipoAtividade` (`panfletagem` | `reuniao` | `paredao` | `evento`),
 `localidadeId` (referência a `localidades`), `pessoasIds` (array de referências a `pessoas`),
 `equipeLabel` (rótulo livre, ex. "Grupo 1" — útil enquanto a atividade ainda não tem pessoas
-específicas vinculadas), `pontoSaida`, `pontoRetorno`, `horarioInicio`, `status`
-(`nao_iniciado` | `na_rua` | `retornou`), `visita` (ex. "1ª visita"), `observacoes`.
+específicas vinculadas), `pontoSaida` (também usado como local de encontro do paredão),
+`pontoRetorno`, `horarioInicio`, `horarioRetorno` (planejado), `roteiro` (trajeto, mais usado
+no paredão), `status` (`nao_iniciado` | `na_rua` | `retornou`), `visita` (ex. "1ª visita"),
+`observacoes`.
+
+**`pessoas`** também tem `dataContratacao` (opcional).
 
 ## Telas
 
 - **Resumo do dia**: contador de contratados vs. na rua hoje (no topo, em todas as páginas),
   seletor de data, aviso de prazo final de visitas e do mini trio, alerta de RAs sem visita há
-  10+ dias (ou perto disso), resumo agrupado por tipo de atividade e por RA, e a métrica de
-  capacidade estimada de panfletagem (pessoas × ~266 panfletos/dia).
-- **Agenda diária**: filtros por data, RA e pessoa; tabela com troca rápida de status
-  (não iniciado / na rua / retornou) direto na linha; cadastro/edição de atividade com
-  dropdowns de localidade e pessoas já cadastradas; botão para carregar o cronograma padrão.
-- **Pessoas**: cadastro rápido (nome, contato, função), inativar/ativar sem excluir.
-- **Localidades**: cadastro por RA, tipo de ponto, endereço/referência e dados do anfitrião
-  quando for ponto de reunião/café.
+  10+ dias (ou perto disso), resumo do dia agrupado por tipo de atividade e por RA, e um gráfico
+  de barras "Panorama geral" com o total de atividades por RA (todas as datas), dividido por
+  tipo de atividade e cor.
+- **Agenda diária**: alterna entre visão em **Lista** (filtros por data, RA e pessoa; troca
+  rápida de status direto na linha) e visão em **Calendário** (mês a mês, cada dia mostra as
+  atividades como chips coloridos por tipo — clicar num dia abre a lista filtrada por ele);
+  cadastro/edição de atividade com dropdowns de localidade e pessoas já cadastradas, incluindo
+  horário de retorno e roteiro/trajeto; botão para carregar o cronograma padrão.
+- **Pessoas**: cadastro rápido (nome, contato, função, data de contratação), inativar/ativar
+  sem excluir.
+- **Localidades**: cadastro por RA, tipo de ponto (panfletagem, reunião/café ou paredão),
+  endereço/referência e dados do anfitrião quando for ponto de reunião/café.
 
 ## Por que sem build?
 
