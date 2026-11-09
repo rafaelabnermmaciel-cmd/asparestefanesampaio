@@ -1,4 +1,4 @@
-// Camada de acesso ao Firestore: init do app, CRUD das 3 coleções e listeners em tempo real.
+// Camada de acesso ao Firestore: init do app, CRUD das coleções e listeners em tempo real.
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js';
 import {
   getFirestore,
@@ -9,11 +9,12 @@ import {
   setDoc,
   addDoc,
   updateDoc,
+  deleteDoc,
   onSnapshot,
   serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
-import { LOCALIDADES_SEED, AGENDA_SEED } from './seed-data.js';
+import { VEICULOS_SEED, FINANCIAMENTOS_SEED, LOCACOES_SEED, MANUTENCOES_SEED } from './seed-data.js';
 
 export const firebaseConfigurado = !Object.values(firebaseConfig).some((v) => String(v).startsWith('COLE_AQUI'));
 
@@ -23,44 +24,34 @@ if (firebaseConfigurado) {
   db = getFirestore(app);
 }
 
-const COL = { pessoas: 'pessoas', localidades: 'localidades', agenda: 'agenda' };
+const COL = {
+  veiculos: 'veiculos',
+  financiamentos: 'financiamentos',
+  locacoes: 'locacoes',
+  pagamentos: 'pagamentos',
+  manutencoes: 'manutencoes',
+};
 
 function checarDb() {
   if (!db) throw new Error('Firebase não configurado. Preencha js/firebase-config.js (veja SETUP.md).');
 }
 
-// ---- Listeners em tempo real -------------------------------------------------------------
+// ---- Helpers genéricos -----------------------------------------------------------------------
 
-export function ouvirPessoas(callback) {
+function ouvirColecao(nomeCol, callback) {
   checarDb();
-  return onSnapshot(collection(db, COL.pessoas), (snap) => {
+  return onSnapshot(collection(db, nomeCol), (snap) => {
     callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
   });
 }
 
-export function ouvirLocalidades(callback) {
-  checarDb();
-  return onSnapshot(collection(db, COL.localidades), (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-  });
-}
-
-export function ouvirAgenda(callback) {
-  checarDb();
-  return onSnapshot(collection(db, COL.agenda), (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-  });
-}
-
-// ---- Pessoas -------------------------------------------------------------------------------
-
-export async function salvarPessoa(dados, id) {
+async function salvarDoc(nomeCol, dados, id) {
   checarDb();
   if (id) {
-    await updateDoc(doc(db, COL.pessoas, id), { ...dados, atualizadoEm: serverTimestamp() });
+    await updateDoc(doc(db, nomeCol, id), { ...dados, atualizadoEm: serverTimestamp() });
     return id;
   }
-  const ref = await addDoc(collection(db, COL.pessoas), {
+  const ref = await addDoc(collection(db, nomeCol), {
     ...dados,
     criadoEm: serverTimestamp(),
     atualizadoEm: serverTimestamp(),
@@ -68,82 +59,81 @@ export async function salvarPessoa(dados, id) {
   return ref.id;
 }
 
-export async function definirStatusPessoa(id, status) {
+async function excluirDoc(nomeCol, id) {
   checarDb();
-  await updateDoc(doc(db, COL.pessoas, id), { status, atualizadoEm: serverTimestamp() });
+  await deleteDoc(doc(db, nomeCol, id));
 }
 
-// ---- Localidades ---------------------------------------------------------------------------
+// ---- Veículos ----------------------------------------------------------------------------
 
-export async function salvarLocalidade(dados, id) {
+export function ouvirVeiculos(callback) { return ouvirColecao(COL.veiculos, callback); }
+export function salvarVeiculo(dados, id) { return salvarDoc(COL.veiculos, dados, id); }
+
+// ---- Financiamentos (parcelas dos veículos próprios) ------------------------------------
+
+export function ouvirFinanciamentos(callback) { return ouvirColecao(COL.financiamentos, callback); }
+export function salvarFinanciamento(dados, id) { return salvarDoc(COL.financiamentos, dados, id); }
+export function excluirFinanciamento(id) { return excluirDoc(COL.financiamentos, id); }
+
+// ---- Locações (histórico de locatários por veículo) ---------------------------------------
+
+export function ouvirLocacoes(callback) { return ouvirColecao(COL.locacoes, callback); }
+export function salvarLocacao(dados, id) { return salvarDoc(COL.locacoes, dados, id); }
+
+export async function encerrarLocacao(id, dataFimReal) {
   checarDb();
-  if (id) {
-    await updateDoc(doc(db, COL.localidades, id), { ...dados, atualizadoEm: serverTimestamp() });
-    return id;
-  }
-  const ref = await addDoc(collection(db, COL.localidades), {
-    ...dados,
-    criadoEm: serverTimestamp(),
-    atualizadoEm: serverTimestamp(),
-  });
-  return ref.id;
+  await updateDoc(doc(db, COL.locacoes, id), { status: 'encerrada', dataFimReal, atualizadoEm: serverTimestamp() });
 }
 
-// ---- Agenda diária -------------------------------------------------------------------------
+// ---- Pagamentos ----------------------------------------------------------------------------
 
-export async function salvarAtividade(dados, id) {
+export function ouvirPagamentos(callback) { return ouvirColecao(COL.pagamentos, callback); }
+export function salvarPagamento(dados, id) { return salvarDoc(COL.pagamentos, dados, id); }
+
+export async function definirStatusPagamento(id, status) {
   checarDb();
-  if (id) {
-    await updateDoc(doc(db, COL.agenda, id), { ...dados, atualizadoEm: serverTimestamp() });
-    return id;
-  }
-  const ref = await addDoc(collection(db, COL.agenda), {
-    ...dados,
-    criadoEm: serverTimestamp(),
-    atualizadoEm: serverTimestamp(),
-  });
-  return ref.id;
+  await updateDoc(doc(db, COL.pagamentos, id), { status, atualizadoEm: serverTimestamp() });
 }
 
-export async function definirStatusAtividade(id, status) {
-  checarDb();
-  await updateDoc(doc(db, COL.agenda, id), { status, atualizadoEm: serverTimestamp() });
-}
+export async function excluirPagamento(id) { return excluirDoc(COL.pagamentos, id); }
 
-// ---- Pré-carga (cronograma 31/08–24/09) ----------------------------------------------------
+// ---- Manutenções (revisões, pneus, etc.) --------------------------------------------------
+
+export function ouvirManutencoes(callback) { return ouvirColecao(COL.manutencoes, callback); }
+export function salvarManutencao(dados, id) { return salvarDoc(COL.manutencoes, dados, id); }
+
+// ---- Pré-carga da frota (SSF4H14, SMM4D01, SGY7C19) ----------------------------------------
 // Idempotente: cada item do seed tem um ID fixo e só é gravado se ainda não existir, então
-// clicar em "Carregar cronograma padrão" de novo nunca apaga edições/status já feitos.
+// clicar em "Carregar frota padrão" de novo nunca apaga edições/status já feitos.
 
-export async function carregarCronogramaPadrao() {
+export async function carregarFrotaPadrao() {
   checarDb();
-  let localidadesCriadas = 0;
-  let atividadesCriadas = 0;
+  const contagem = { veiculos: 0, financiamentos: 0, locacoes: 0, manutencoes: 0 };
 
-  for (const loc of LOCALIDADES_SEED) {
-    const ref = doc(db, COL.localidades, loc.id);
-    const existente = await getDoc(ref);
-    if (!existente.exists()) {
-      const { id, ...campos } = loc;
-      await setDoc(ref, { ...campos, criadoEm: serverTimestamp(), atualizadoEm: serverTimestamp() });
-      localidadesCriadas++;
+  const grupos = [
+    [COL.veiculos, VEICULOS_SEED, 'veiculos'],
+    [COL.financiamentos, FINANCIAMENTOS_SEED, 'financiamentos'],
+    [COL.locacoes, LOCACOES_SEED, 'locacoes'],
+    [COL.manutencoes, MANUTENCOES_SEED, 'manutencoes'],
+  ];
+
+  for (const [nomeCol, itens, chave] of grupos) {
+    for (const item of itens) {
+      const ref = doc(db, nomeCol, item.id);
+      const existente = await getDoc(ref);
+      if (!existente.exists()) {
+        const { id, ...campos } = item;
+        await setDoc(ref, { ...campos, criadoEm: serverTimestamp(), atualizadoEm: serverTimestamp() });
+        contagem[chave]++;
+      }
     }
   }
 
-  for (const item of AGENDA_SEED) {
-    const ref = doc(db, COL.agenda, item.id);
-    const existente = await getDoc(ref);
-    if (!existente.exists()) {
-      const { id, ...campos } = item;
-      await setDoc(ref, { ...campos, criadoEm: serverTimestamp(), atualizadoEm: serverTimestamp() });
-      atividadesCriadas++;
-    }
-  }
-
-  return { localidadesCriadas, atividadesCriadas };
+  return contagem;
 }
 
-export async function cronogramaJaCarregado() {
+export async function frotaJaCarregada() {
   checarDb();
-  const snap = await getDocs(collection(db, COL.agenda));
+  const snap = await getDocs(collection(db, COL.veiculos));
   return !snap.empty;
 }

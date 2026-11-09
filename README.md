@@ -1,15 +1,15 @@
-# Equipe de Rua — Estéfane Sampaio
+# RM Veículos — Controle de Frota
 
-App de organização da equipe de rua da campanha: cadastro de pessoas, localidades
-(panfletagem e reunião/café) e agenda diária de atividades (panfletagem, reunião/café,
-paredão, eventos nas RAs), com contador de contratados vs. quem está na rua no dia, resumo do
-dia por tipo de atividade e por RA, e alerta de RA sem visita há muito tempo.
+App de controle da frota administrada pela RM Veículos (Rafael Abner Machado Maciel):
+cadastro dos veículos (BYD Dolphin GS 180EV), locações (histórico de locatários por carro),
+pagamentos semanais (toda segunda-feira) e manutenções (revisões pela tabela oficial BYD, por
+km ou data — vale o que vier primeiro), com previsibilidade de renda distinguindo veículo
+próprio (receita total do aluguel) de veículos de terceiros (taxa fixa de administração).
 
 HTML/CSS/JS puro (sem build, sem framework) + **Firebase Firestore** como banco de dados, com
-sincronização em tempo real entre todos os aparelhos da equipe. Reaproveita a paleta e a
-estrutura de navegação (sidebar + barra inferior no celular, tema claro/escuro) dos painéis
-`painel-nacional`/`painel-captacao` do repositório `asparcbmgo` — projeto independente, mas
-com a mesma identidade visual.
+sincronização em tempo real entre todos os aparelhos. Reaproveita a paleta e a estrutura de
+navegação (sidebar + barra inferior no celular, tema claro/escuro) do projeto original deste
+repositório.
 
 **Primeira vez configurando?** Vá direto pro **[SETUP.md](./SETUP.md)** — passo a passo
 clicável para criar o projeto no Firebase, sem precisar programar.
@@ -19,53 +19,54 @@ clicável para criar o projeto no Firebase, sem precisar programar.
 - `index.html` — layout (sidebar, barra mobile, contador do topo, modais).
 - `css/styles.css` — pequenos ajustes além do Tailwind (via CDN).
 - `js/firebase-config.js` — **edite este arquivo** com os dados do seu projeto Firebase.
-- `js/firestore.js` — conexão com o Firestore: CRUD das 3 coleções, listeners em tempo real
-  (`onSnapshot`) e a função de pré-carga do cronograma.
-- `js/seed-data.js` — dados do Plano de Ação (localidades e agenda de 31/08 a 24/09/2026) e
-  referências fixas (capacidade de panfletagem, janela do mini trio, prazo final de visitas).
+- `js/firestore.js` — conexão com o Firestore: CRUD das 5 coleções, listeners em tempo real
+  (`onSnapshot`) e a função de pré-carga da frota padrão.
+- `js/seed-data.js` — dados reais da frota (veículos, financiamentos, locações e manutenções
+  dos 3 carros administrados) e a tabela oficial de revisões BYD.
 - `js/app.js` — toda a interface: navegação entre páginas, renderização das telas, filtros e
   formulários.
 
 ## Coleções no Firestore
 
-**`pessoas`**
-`nome`, `contato`, `funcao`, `status` (`ativo` | `inativo`).
+**`veiculos`**
+`placa`, `modelo`, `cor`, `anoFabricacao`, `anoModelo`, `renavam`, `chassi`,
+`proprietarioNome`, `tipoReceita` (`total` — é seu, a renda é o aluguel inteiro, menos
+financiamento/gastos — ou `administracao` — de terceiro, a renda é a taxa fixa), `valorCompra`,
+`dataInicioOperacao`, `kmInicial`, `protecaoVeicularMensal`, `taxaAdministracaoMensal` (quando
+`tipoReceita === 'administracao'`), `status` (`ativo` | `inativo`).
 
-**`localidades`**
-`ra` (região administrativa), `tipo` (`panfletagem` | `reuniao` | `paredao`), `endereco`,
-`anfitriaoNome`/`anfitriaoContato` (só relevantes quando `tipo === 'reuniao'`). Uma RA pode ter
-vários pontos cadastrados (um de cada tipo, ou mais de um do mesmo tipo em visitas diferentes).
+**`financiamentos`**
+`veiculoId`, `instituicao`, `numeroContrato`, `parcela`, `jurosAoMes`, `diaVencimento`.
 
-**`agenda`**
-`data` (`AAAA-MM-DD`), `tipoAtividade` (`panfletagem` | `reuniao` | `paredao` | `evento`),
-`localidadeId` (referência a `localidades`), `pessoasIds` (array de referências a `pessoas`),
-`equipeLabel` (rótulo livre, ex. "Grupo 1" — útil enquanto a atividade ainda não tem pessoas
-específicas vinculadas), `pontoSaida` (também usado como local de encontro do paredão),
-`pontoRetorno`, `horarioInicio`, `horarioRetorno` (planejado), `roteiro` (trajeto, mais usado
-no paredão), `status` (`nao_iniciado` | `na_rua` | `retornou`), `visita` (ex. "1ª visita"),
-`observacoes`.
+**`locacoes`**
+`veiculoId`, `locatarioNome`, `locatarioCpf`, `dataRetirada`, `dataFim`, `dataFimReal`,
+`valorSemanal`, `diaPagamento` (dia da semana atual de cobrança), `diaPagamentoAnterior`
+(dia que valia antes da migração para segunda-feira, por histórico), `caucaoValor`,
+`caucaoStatus`, `multaRescisoria`, `status` (`ativa` | `encerrada`).
 
-**`pessoas`** também tem `dataContratacao` (opcional).
+**`pagamentos`**
+`locacaoId`, `dataReferencia` (semana a que se refere), `valor`, `status`
+(`pago` | `pendente` | `atrasado`).
+
+**`manutencoes`**
+`veiculoId`, `tipo` (`revisao`), `dataRealizada`, `kmRealizado`, `status` (`concluida`).
 
 ## Telas
 
-- **Resumo do dia**: contador de contratados vs. na rua hoje (no topo, em todas as páginas),
-  seletor de data, aviso de prazo final de visitas e do mini trio, alerta de RAs sem visita há
-  10+ dias (ou perto disso), resumo do dia agrupado por tipo de atividade e por RA, e um gráfico
-  de barras "Panorama geral" com o total de atividades por RA (todas as datas), dividido por
-  tipo de atividade e cor.
-- **Agenda diária**: alterna entre visão em **Lista** (filtros por data, RA e pessoa; troca
-  rápida de status direto na linha) e visão em **Calendário** (mês a mês, cada dia mostra as
-  atividades como chips coloridos por tipo — clicar num dia abre a lista filtrada por ele);
-  cadastro/edição de atividade com dropdowns de localidade e pessoas já cadastradas, incluindo
-  horário de retorno e roteiro/trajeto; botão para carregar o cronograma padrão.
-- **Pessoas**: cadastro rápido (nome, contato, função, data de contratação), inativar/ativar
-  sem excluir.
-- **Localidades**: cadastro por RA, tipo de ponto (panfletagem, reunião/café ou paredão),
-  endereço/referência e dados do anfitrião quando for ponto de reunião/café.
+- **Painel**: pagamentos da semana (vencimento, status, atraso), próximas revisões previstas
+  (km ou data, o que vier primeiro) e renda prevista do mês, separando receita total dos
+  veículos próprios da taxa de administração dos veículos de terceiros.
+- **Veículos**: cadastro da frota (dados do carro, proprietário, tipo de receita) e
+  financiamentos vinculados (parcela, juros, dia de vencimento).
+- **Locações**: histórico de locatários por veículo, com caução, multa rescisória e
+  encerramento de contrato.
+- **Pagamentos**: controle semanal (toda segunda-feira), filtro por veículo e status, marcar
+  como pago/pendente/atrasado.
+- **Manutenções**: registro de revisões feitas e cálculo automático da próxima (tabela oficial
+  BYD por km, com data prevista = última data + 1 ano).
 
 ## Por que sem build?
 
-O pedido era uma interface HTML/JS simples de preencher no dia a dia por toda a equipe de
-rua. Sem etapa de build, basta subir este repositório em qualquer hospedagem estática (ou até
-abrir com um servidor local) — não precisa de Node, `npm install` nem pipeline de deploy.
+Interface HTML/JS simples de preencher no dia a dia. Sem etapa de build, basta subir este
+repositório em qualquer hospedagem estática (ou até abrir com um servidor local) — não precisa
+de Node, `npm install` nem pipeline de deploy.

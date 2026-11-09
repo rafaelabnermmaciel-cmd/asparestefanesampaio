@@ -36,7 +36,7 @@ telas certas. Faça assim:
 1. No menu da esquerda, clique no ícone de engrenagem ⚙️ ao lado de **Visão geral do
    projeto** → **Configurações do projeto**.
 2. Role até **Seus apps** e clique no ícone **`</>`** (Web).
-3. Dê um apelido, por exemplo `equipe-rua` (não marque o Firebase Hosting). Clique em
+3. Dê um apelido, por exemplo `rm-veiculos` (não marque o Firebase Hosting). Clique em
    **Registrar app**.
 4. Vai aparecer um bloco de código com `const firebaseConfig = { ... }`. Copie os valores de
    `apiKey`, `authDomain`, `projectId`, `storageBucket`, `messagingSenderId` e `appId`.
@@ -66,17 +66,19 @@ renovar, vá em **Firestore Database** → aba **Regras**, apague o conteúdo e 
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /pessoas/{doc} { allow read, write: if true; }
-    match /localidades/{doc} { allow read, write: if true; }
-    match /agenda/{doc} { allow read, write: if true; }
+    match /veiculos/{doc} { allow read, write: if true; }
+    match /financiamentos/{doc} { allow read, write: if true; }
+    match /locacoes/{doc} { allow read, write: if true; }
+    match /pagamentos/{doc} { allow read, write: if true; }
+    match /manutencoes/{doc} { allow read, write: if true; }
   }
 }
 ```
 
-Clique em **Publicar**. Isso libera leitura e escrita nas 3 coleções do app para qualquer
-pessoa com o link — adequado para uso interno rápido pela equipe. Se mais adiante quiser
-exigir login, é possível trocar `if true` por uma regra de autenticação, mas isso já exige
-adicionar login ao app (fora do escopo deste app simples).
+Clique em **Publicar**. Isso libera leitura e escrita nas 5 coleções do app para qualquer
+pessoa com o link — adequado para uso pessoal/interno rápido. Se mais adiante quiser exigir
+login, é possível trocar `if true` por uma regra de autenticação, mas isso já exige adicionar
+login ao app (fora do escopo deste app simples).
 
 ## 5. Abrir o app
 
@@ -88,20 +90,17 @@ adicionar login ao app (fora do escopo deste app simples).
   Abrir o `index.html` direto pelo `file://` não funciona porque o navegador bloqueia módulos
   JavaScript (`type="module"`) nesse modo.
 
-## 6. Carregar o cronograma pronto (31/08 a 24/09/2026)
+## 6. Carregar a frota padrão (SSF4H14, SMM4D01, SGY7C19)
 
-Assim que o Firebase estiver configurado, abra o app, vá na aba **Agenda diária** e clique no
-botão **"Carregar cronograma padrão"** (só aparece enquanto a agenda estiver vazia). Isso
-cadastra de uma vez:
-
-- As 19 localidades (uma por RA do cronograma), como pontos de **panfletagem**.
-- As 25 atividades de panfletagem já com data, RA, grupo (Grupo 1/2/3) e horário de saída
-  (13h30, saindo e retornando ao comitê em Taguatinga).
+Assim que o Firebase estiver configurado, abra o app, vá na aba **Veículos** e clique no botão
+**"Carregar frota padrão"** (só aparece enquanto a frota estiver vazia). Isso cadastra de uma
+vez os 3 veículos administrados, os financiamentos do SSF4H14, o histórico de locações de cada
+carro e a última revisão registrada de cada um.
 
 É seguro clicar de novo depois (por exemplo, se alguém clicar sem querer) — o botão some
-sozinho assim que a agenda já tiver dados, e o carregamento nunca sobrescreve uma atividade ou
-localidade que já exista.
+sozinho assim que já houver veículos cadastrados, e o carregamento nunca sobrescreve um
+registro que já exista.
 
-Depois disso, é só a equipe ir cadastrando as **Pessoas** (aba Pessoas) e, na Agenda, editar
-cada atividade para vincular quem vai em cada grupo — ou criar atividades novas para paredão,
-reuniões/café e eventos que forem surgindo.
+Depois disso, é só ir lançando os **Pagamentos** semanais (toda segunda-feira) e as novas
+**Manutenções** conforme forem feitas — e cadastrar nova **Locação** quando um veículo trocar
+de locatário.
