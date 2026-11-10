@@ -84,6 +84,19 @@ function diffDiasISO(a, b) {
   return Math.round((db_ - da) / 86400000);
 }
 
+// Quantas segundas-feiras (dia de pagamento padrão) caem no mês 'AAAA-MM' — usado pra projetar
+// a receita do mês inteiro, não só o que já foi marcado como pago até agora.
+function segundasNoMes(mesAtual) {
+  const [ano, mes] = mesAtual.split('-').map(Number);
+  let count = 0;
+  const d = new Date(ano, mes - 1, 1);
+  while (d.getMonth() === mes - 1) {
+    if (d.getDay() === 1) count++;
+    d.setDate(d.getDate() + 1);
+  }
+  return count;
+}
+
 function esc(str) {
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -253,15 +266,17 @@ function renderPainel() {
     const loc = locacaoAtiva(v.id);
     const fins = financiamentosDoVeiculo(v.id);
     const rev = ultimaRevisao(v.id);
-    const prox = rev ? calcularProximaRevisao(rev.kmRealizado, rev.dataRealizada) : null;
+    const prox = rev ? calcularProximaRevisao(v, rev) : null;
 
     let receitaMes = 0;
     if (v.tipoReceita === 'administracao') {
       receitaMes = loc ? (v.taxaAdministracaoMensal || 0) : 0;
     } else {
-      const pagosNoMes = state.pagamentos.filter((p) => p.veiculoId === v.id && p.status === 'pago' && (p.dataReferencia || '').startsWith(mesAtual)).reduce((s, p) => s + Number(p.valor || 0), 0);
+      // Projeta o mês inteiro (nº de segundas × valor semanal), não só o que já foi pago até
+      // agora — consistente com a administração, que já é uma previsão mensal fixa.
       const parcelasTotal = fins.reduce((s, f) => s + Number(f.parcela || 0), 0);
-      receitaMes = pagosNoMes - parcelasTotal - Number(v.protecaoVeicularMensal || 0);
+      const receitaSemanalPrevista = loc ? segundasNoMes(mesAtual) * Number(loc.valorSemanal || 0) : 0;
+      receitaMes = receitaSemanalPrevista - parcelasTotal - Number(v.protecaoVeicularMensal || 0);
     }
     receitaMesTotal += receitaMes;
 
@@ -306,7 +321,7 @@ function renderPainel() {
           ${proxRevisaoHtml}
         </div>
         <div class="flex items-center justify-between border-t border-slate-100 pt-3 dark:border-slate-800">
-          <p class="text-xs text-slate-400">Renda do mês (${mesAtual.split('-').reverse().join('/')})</p>
+          <p class="text-xs text-slate-400">Lucro previsto do mês (${mesAtual.split('-').reverse().join('/')})</p>
           <p class="text-sm font-semibold ${receitaMes >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">${formatMoeda(receitaMes)}</p>
         </div>
       </div>`;
@@ -873,7 +888,7 @@ function renderManutencoes() {
         <p class="text-sm font-semibold text-slate-900 dark:text-white">${esc(v.placa)}</p>
         <p class="mt-2 text-xs text-slate-400">Nenhuma revisão registrada ainda.</p>
       </div>`;
-    const prox = calcularProximaRevisao(rev.kmRealizado, rev.dataRealizada);
+    const prox = calcularProximaRevisao(v, rev);
     const diasData = diffDiasISO(hoje, prox.dataPrevista);
     const alerta = diasData <= 30;
     return `

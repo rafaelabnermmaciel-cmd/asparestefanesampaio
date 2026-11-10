@@ -35,6 +35,7 @@ export const VEICULOS_SEED = [
     tipoReceita: 'total', // é seu — a renda é o aluguel inteiro, menos financiamento/gastos
     valorCompra: 120000,
     dataInicioOperacao: '2026-05-28',
+    kmInicial: 52993, // termo de vistoria assinado com o Geudivaldo, 28/05/2026
     protecaoVeicularMensal: PROTECAO_VEICULAR_MENSAL,
     status: 'ativo',
   },
@@ -67,8 +68,9 @@ export const VEICULOS_SEED = [
     chassi: 'LC0CE4CC2R0007269',
     proprietarioNome: 'Luiz Claudio Cardoso Maciel',
     tipoReceita: 'administracao',
-    valorCompra: 117000,
-    dataInicioOperacao: '2026-10-13',
+    valorCompra: 118000,
+    dataInicioOperacao: '2026-04-27', // 1º contrato (Gustavo), não o do Herbert
+    kmInicial: 29000, // km que o carro tinha na compra
     protecaoVeicularMensal: PROTECAO_VEICULAR_MENSAL,
     taxaAdministracaoMensal: TAXA_ADMINISTRACAO_MENSAL,
     status: 'ativo',
@@ -186,6 +188,19 @@ export const LOCACOES_SEED = [
   },
 
   // --- SGY7C19 ---
+  // Gustavo foi o 1º motorista; depois ficou 45 dias parado (sem locatário) até o Herbert.
+  {
+    id: 'locacao-sgy-gustavo',
+    veiculoId: 'veiculo-sgy7c19',
+    locatarioNome: 'Gustavo Esser de Oliveira',
+    dataRetirada: '2026-04-27',
+    dataFim: '2026-08-29',
+    valorSemanal: VALOR_SEMANAL_PADRAO,
+    diaPagamento: 'segunda',
+    caucaoValor: null,
+    caucaoStatus: '',
+    status: 'encerrada',
+  },
   {
     id: 'locacao-sgy-herbert',
     veiculoId: 'veiculo-sgy7c19',
@@ -232,16 +247,43 @@ export const MANUTENCOES_SEED = [
   },
 ];
 
-// Calcula a próxima revisão prevista: o marco de km da tabela BYD logo acima da última
-// revisão feita, e a data = última data + 1 ano. Vale o que vier primeiro.
-export function calcularProximaRevisao(kmUltimaRevisao, dataUltimaRevisao) {
-  const proximoMarco = TABELA_REVISAO_BYD.find((m) => m.km > kmUltimaRevisao);
-  const [ano, mes, dia] = dataUltimaRevisao.split('-').map(Number);
-  const dataPrevista = new Date(ano + 1, mes - 1, dia);
-  const dataPrevistaISO = `${dataPrevista.getFullYear()}-${String(dataPrevista.getMonth() + 1).padStart(2, '0')}-${String(dataPrevista.getDate()).padStart(2, '0')}`;
-  return {
-    kmPrevisto: proximoMarco ? proximoMarco.km : null,
-    valorPrevisto: proximoMarco ? proximoMarco.valor : null,
-    dataPrevista: dataPrevistaISO,
-  };
+function diasEntreISO(a, b) {
+  return Math.round((new Date(`${b}T00:00:00`) - new Date(`${a}T00:00:00`)) / 86400000);
+}
+
+function somarDiasISO(iso, dias) {
+  const [ano, mes, dia] = iso.split('-').map(Number);
+  const d = new Date(ano, mes - 1, dia + dias);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Calcula a próxima revisão prevista: km = última revisão + 20.000 (espaçamento fixo da BYD,
+// sempre o mesmo independente do km exato da última revisão), valor pela faixa da tabela mais
+// próxima desse km previsto, e data projetada pela média de km rodado por dia (do início de
+// operação até a última revisão), aplicada pra frente a partir da última revisão. Sem dados de
+// km inicial/início de operação suficientes, cai de volta pra +1 ano. Vale o que vier primeiro.
+export function calcularProximaRevisao(veiculo, manutencao) {
+  const kmUltimaRevisao = manutencao.kmRealizado;
+  const dataUltimaRevisao = manutencao.dataRealizada;
+  const kmPrevisto = kmUltimaRevisao + 20000;
+
+  const marcoProximo = TABELA_REVISAO_BYD.reduce((melhor, m) =>
+    Math.abs(m.km - kmPrevisto) < Math.abs(melhor.km - kmPrevisto) ? m : melhor
+  );
+
+  let dataPrevista = null;
+  if (veiculo?.kmInicial != null && veiculo?.dataInicioOperacao) {
+    const dias = diasEntreISO(veiculo.dataInicioOperacao, dataUltimaRevisao);
+    const kmRodados = kmUltimaRevisao - veiculo.kmInicial;
+    if (dias > 0 && kmRodados > 0) {
+      const mediaKmDia = kmRodados / dias;
+      dataPrevista = somarDiasISO(dataUltimaRevisao, Math.round(20000 / mediaKmDia));
+    }
+  }
+  if (!dataPrevista) {
+    const [ano, mes, dia] = dataUltimaRevisao.split('-').map(Number);
+    dataPrevista = `${ano + 1}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+  }
+
+  return { kmPrevisto, valorPrevisto: marcoProximo.valor, dataPrevista };
 }
