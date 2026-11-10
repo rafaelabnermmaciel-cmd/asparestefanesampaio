@@ -24,8 +24,6 @@ import {
   ouvirAcessosPendentes,
   aprovarAcesso,
   recusarAcesso,
-  enviarDocumento,
-  excluirDocumento,
 } from './firestore.js';
 import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js';
 
@@ -118,6 +116,50 @@ function custoRevisaoHtml(prox, classeMuted) {
   if (prox.gratuita) return ` <span class="font-normal ${classeMuted}">· grátis (garantia)</span>`;
   if (prox.valorPrevisto) return ` <span class="font-normal ${classeMuted}">· ~${formatMoeda(prox.valorPrevisto)}</span>`;
   return '';
+}
+
+// Comprime uma imagem no navegador (canvas) e devolve como data URL (base64) — usado pra guardar
+// fotos de documentos/contratos direto no Firestore, já que não temos Firebase Storage (plano
+// pago). Redimensiona pra no máximo `maxLargura` px e recomprime em JPEG, pra caber no limite de
+// 1 MB por documento do Firestore mesmo com várias páginas.
+function comprimirImagem(arquivo, maxLargura = 1280, qualidade = 0.6) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(arquivo);
+    const img = new Image();
+    img.onload = () => {
+      const escala = Math.min(1, maxLargura / img.width);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * escala);
+      canvas.height = Math.round(img.height * escala);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', qualidade));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Não consegui ler essa imagem.')); };
+    img.src = url;
+  });
+}
+
+// Comprime cada imagem escolhida e devolve a lista pronta pra gravar no Firestore (nome + dados
+// em base64). Para no limite de ORÇAMENTO_PAGINAS_BYTES pra nunca estourar o 1 MB do documento.
+const ORCAMENTO_PAGINAS_BYTES = 850000;
+
+async function prepararPaginasDocumento(arquivos) {
+  const paginas = [];
+  let total = 0;
+  for (const arquivo of arquivos) {
+    if (!arquivo.type.startsWith('image/')) {
+      throw new Error(`"${arquivo.name}" não é uma imagem — tire uma foto ou print de cada página do documento.`);
+    }
+    const dados = await comprimirImagem(arquivo);
+    total += dados.length;
+    if (total > ORCAMENTO_PAGINAS_BYTES) {
+      throw new Error('Muitas páginas/fotos grandes pra guardar de uma vez — tente enviar menos páginas, ou em fotos separadas.');
+    }
+    paginas.push({ nome: arquivo.name, dados });
+  }
+  return paginas;
 }
 
 function diffDiasISO(a, b) {
@@ -501,7 +543,7 @@ function renderVeiculos() {
         <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div class="mb-2 flex items-start justify-between gap-2">
             <div>
-              <p class="text-sm font-semibold text-slate-900 dark:text-white">${esc(v.placa)}${v.documentoUrl ? ` <a href="${esc(v.documentoUrl)}" target="_blank" rel="noopener" title="Ver documento do veículo" class="text-indigo-500">📄</a>` : ''}</p>
+              <p class="text-sm font-semibold text-slate-900 dark:text-white">${esc(v.placa)}${v.documentoPaginas?.length ? ` <button type="button" data-ver-documento="${v.id}" title="Ver documento do veículo" class="text-indigo-500">📄</button>` : ''}</p>
               <p class="text-xs text-slate-400">${esc(v.modelo)} · ${esc(v.cor || '—')}</p>
             </div>
             <span class="badge ${TIPO_RECEITA_LABEL[v.tipoReceita]?.cor || ''}">${TIPO_RECEITA_LABEL[v.tipoReceita]?.label || v.tipoReceita}</span>
@@ -528,7 +570,7 @@ function renderVeiculos() {
         <tbody>
           ${lista.length ? lista.map((v) => `
             <tr class="border-b border-slate-50 last:border-0 dark:border-slate-800/60">
-              <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">${esc(v.placa)}${v.documentoUrl ? ` <a href="${esc(v.documentoUrl)}" target="_blank" rel="noopener" title="Ver documento do veículo" class="text-indigo-500">📄</a>` : ''}</td>
+              <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">${esc(v.placa)}${v.documentoPaginas?.length ? ` <button type="button" data-ver-documento="${v.id}" title="Ver documento do veículo" class="text-indigo-500">📄</button>` : ''}</td>
               <td class="px-4 py-3 text-slate-500 dark:text-slate-400">${esc(v.modelo)} · ${esc(v.cor || '—')}</td>
               <td class="px-4 py-3 text-slate-500 dark:text-slate-400">${esc(v.proprietarioNome)}</td>
               <td class="px-4 py-3"><span class="badge ${TIPO_RECEITA_LABEL[v.tipoReceita]?.cor || ''}">${TIPO_RECEITA_LABEL[v.tipoReceita]?.label || v.tipoReceita}</span></td>
@@ -554,6 +596,10 @@ function renderVeiculos() {
   });
   container.querySelectorAll('[data-editar-veiculo]').forEach((btn) => btn.addEventListener('click', () => abrirModalVeiculo(veiculoPorId(btn.dataset.editarVeiculo))));
   container.querySelectorAll('[data-financiamento]').forEach((btn) => btn.addEventListener('click', () => abrirModalFinanciamentos(veiculoPorId(btn.dataset.financiamento))));
+  container.querySelectorAll('[data-ver-documento]').forEach((btn) => btn.addEventListener('click', () => {
+    const v = veiculoPorId(btn.dataset.verDocumento);
+    abrirModalPaginas(`Documento — ${v.placa}`, v.documentoPaginas);
+  }));
   container.querySelectorAll('[data-ver-relatorio]').forEach((btn) => btn.addEventListener('click', () => {
     state.relatorioVeiculoId = btn.dataset.verRelatorio;
     location.hash = 'relatorio';
@@ -627,9 +673,9 @@ function abrirModalVeiculo(veiculo = null) {
           <option value="inativo" ${veiculo?.status === 'inativo' ? 'selected' : ''}>Inativo (vendido/parado)</option>
         </select>
       </label>
-      <label class="block text-xs text-slate-500 dark:text-slate-400">Documento do veículo <span class="text-slate-300">(CRLV, etc. — PDF ou imagem)</span>
-        ${veiculo?.documentoUrl ? `<p class="mt-1 text-xs"><a href="${esc(veiculo.documentoUrl)}" target="_blank" rel="noopener" class="font-medium text-indigo-600 hover:underline dark:text-indigo-400">📄 ${esc(veiculo.documentoNome || 'Ver documento atual')}</a> <button type="button" id="btn-remover-documento" class="ml-2 text-rose-600 hover:underline dark:text-rose-400">remover</button></p>` : ''}
-        <input type="file" name="documento" accept=".pdf,image/*" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+      <label class="block text-xs text-slate-500 dark:text-slate-400">Documento do veículo <span class="text-slate-300">(CRLV, etc. — foto ou print de cada página)</span>
+        ${veiculo?.documentoPaginas?.length ? `<p class="mt-1 text-xs"><button type="button" id="btn-ver-documento" class="font-medium text-indigo-600 hover:underline dark:text-indigo-400">📄 Ver documento atual (${veiculo.documentoPaginas.length} pág.)</button> <button type="button" id="btn-remover-documento" class="ml-2 text-rose-600 hover:underline dark:text-rose-400">remover</button></p>` : ''}
+        <input type="file" name="documento" accept="image/*" multiple class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
       </label>
       <div class="flex justify-end gap-2 pt-2">
         <button type="button" id="btn-cancelar" class="rounded-xl px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Cancelar</button>
@@ -640,6 +686,7 @@ function abrirModalVeiculo(veiculo = null) {
   abrirModal(html);
   qs('#btn-cancelar').addEventListener('click', fecharModal);
   qs('#select-tipo-receita').addEventListener('change', (e) => qs('#campo-taxa-admin').classList.toggle('hidden', e.target.value !== 'administracao'));
+  qs('#btn-ver-documento')?.addEventListener('click', () => abrirModalPaginas(`Documento — ${veiculo.placa}`, veiculo.documentoPaginas));
   let documentoRemovido = false;
   qs('#btn-remover-documento')?.addEventListener('click', (e) => {
     documentoRemovido = true;
@@ -668,18 +715,11 @@ function abrirModalVeiculo(veiculo = null) {
       status: fd.get('status'),
     };
     try {
-      const arquivo = fd.get('documento');
-      if (arquivo && arquivo.size > 0) {
-        if (veiculo?.documentoCaminho) await excluirDocumento(veiculo.documentoCaminho);
-        const { url, caminho, nome } = await enviarDocumento(`veiculos/${veiculo?.id || fd.get('placa')}`, arquivo);
-        dados.documentoUrl = url;
-        dados.documentoCaminho = caminho;
-        dados.documentoNome = nome;
-      } else if (documentoRemovido && veiculo?.documentoCaminho) {
-        await excluirDocumento(veiculo.documentoCaminho);
-        dados.documentoUrl = null;
-        dados.documentoCaminho = null;
-        dados.documentoNome = null;
+      const arquivos = fd.getAll('documento').filter((a) => a.size > 0);
+      if (arquivos.length) {
+        dados.documentoPaginas = await prepararPaginasDocumento(arquivos);
+      } else if (documentoRemovido) {
+        dados.documentoPaginas = null;
       }
       await salvarVeiculo(dados, veiculo?.id);
       toast('Veículo salvo.');
@@ -786,7 +826,7 @@ function renderLocacoes() {
         <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div class="mb-2 flex items-start justify-between gap-2">
             <div>
-              <p class="text-sm font-semibold text-slate-900 dark:text-white">${esc(l.locatarioNome)}${l.contratoUrl ? ` <a href="${esc(l.contratoUrl)}" target="_blank" rel="noopener" title="Ver contrato assinado" class="text-indigo-500">📄</a>` : ''}</p>
+              <p class="text-sm font-semibold text-slate-900 dark:text-white">${esc(l.locatarioNome)}${l.contratoPaginas?.length ? ` <button type="button" data-ver-contrato="${l.id}" title="Ver contrato assinado" class="text-indigo-500">📄</button>` : ''}</p>
               <p class="text-xs text-slate-400">${esc(v?.placa || '—')}</p>
             </div>
             <span class="badge ${STATUS_LOCACAO[l.status]?.cor || ''}">${STATUS_LOCACAO[l.status]?.label || l.status}</span>
@@ -823,7 +863,7 @@ function renderLocacoes() {
             return `
             <tr class="border-b border-slate-50 last:border-0 dark:border-slate-800/60">
               <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">${esc(v?.placa || '—')}</td>
-              <td class="px-4 py-3">${esc(l.locatarioNome)}${l.contratoUrl ? ` <a href="${esc(l.contratoUrl)}" target="_blank" rel="noopener" title="Ver contrato assinado" class="text-indigo-500">📄</a>` : ''}</td>
+              <td class="px-4 py-3">${esc(l.locatarioNome)}${l.contratoPaginas?.length ? ` <button type="button" data-ver-contrato="${l.id}" title="Ver contrato assinado" class="text-indigo-500">📄</button>` : ''}</td>
               <td class="px-4 py-3 whitespace-nowrap">${formatDateBR(l.dataRetirada)}</td>
               <td class="px-4 py-3 whitespace-nowrap">${formatDateBR(l.dataFim)}</td>
               <td class="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">${formatMoeda(l.valorSemanal)} · ${DIAS_SEMANA_LABEL[l.diaPagamento] || l.diaPagamento}</td>
@@ -847,6 +887,10 @@ function renderLocacoes() {
   container.querySelectorAll('[data-ver-observacao]').forEach((btn) => btn.addEventListener('click', () => {
     const l = state.locacoes.find((x) => x.id === btn.dataset.verObservacao);
     abrirModalObservacao(l);
+  }));
+  container.querySelectorAll('[data-ver-contrato]').forEach((btn) => btn.addEventListener('click', () => {
+    const l = state.locacoes.find((x) => x.id === btn.dataset.verContrato);
+    abrirModalPaginas(`Contrato — ${l.locatarioNome}`, l.contratoPaginas);
   }));
   container.querySelectorAll('[data-encerrar-locacao]').forEach((btn) => btn.addEventListener('click', async () => {
     if (!confirm('Encerrar esta locação (veículo devolvido)?')) return;
@@ -919,9 +963,9 @@ function abrirModalLocacao(locacao = null) {
       <label class="block text-xs text-slate-500 dark:text-slate-400">Observações <span class="text-slate-300">(acertos, diárias em aberto, descontos na caução, etc.)</span>
         <textarea name="observacoes" rows="3" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900">${esc(locacao?.observacoes || '')}</textarea>
       </label>
-      <label class="block text-xs text-slate-500 dark:text-slate-400">Contrato assinado <span class="text-slate-300">(PDF ou imagem)</span>
-        ${locacao?.contratoUrl ? `<p class="mt-1 text-xs"><a href="${esc(locacao.contratoUrl)}" target="_blank" rel="noopener" class="font-medium text-indigo-600 hover:underline dark:text-indigo-400">📄 ${esc(locacao.contratoNome || 'Ver contrato atual')}</a> <button type="button" id="btn-remover-contrato" class="ml-2 text-rose-600 hover:underline dark:text-rose-400">remover</button></p>` : ''}
-        <input type="file" name="contrato" accept=".pdf,image/*" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+      <label class="block text-xs text-slate-500 dark:text-slate-400">Contrato assinado <span class="text-slate-300">(foto ou print de cada página)</span>
+        ${locacao?.contratoPaginas?.length ? `<p class="mt-1 text-xs"><button type="button" id="btn-ver-contrato" class="font-medium text-indigo-600 hover:underline dark:text-indigo-400">📄 Ver contrato atual (${locacao.contratoPaginas.length} pág.)</button> <button type="button" id="btn-remover-contrato" class="ml-2 text-rose-600 hover:underline dark:text-rose-400">remover</button></p>` : ''}
+        <input type="file" name="contrato" accept="image/*" multiple class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
       </label>
       <div class="flex justify-end gap-2 pt-2">
         <button type="button" id="btn-cancelar" class="rounded-xl px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Cancelar</button>
@@ -931,6 +975,7 @@ function abrirModalLocacao(locacao = null) {
   `;
   abrirModal(html);
   qs('#btn-cancelar').addEventListener('click', fecharModal);
+  qs('#btn-ver-contrato')?.addEventListener('click', () => abrirModalPaginas(`Contrato — ${locacao.locatarioNome}`, locacao.contratoPaginas));
   let contratoRemovido = false;
   qs('#btn-remover-contrato')?.addEventListener('click', (e) => {
     contratoRemovido = true;
@@ -957,18 +1002,11 @@ function abrirModalLocacao(locacao = null) {
       observacoes: fd.get('observacoes') || '',
     };
     try {
-      const arquivo = fd.get('contrato');
-      if (arquivo && arquivo.size > 0) {
-        if (locacao?.contratoCaminho) await excluirDocumento(locacao.contratoCaminho);
-        const { url, caminho, nome } = await enviarDocumento(`locacoes/${locacao?.id || Date.now()}`, arquivo);
-        dados.contratoUrl = url;
-        dados.contratoCaminho = caminho;
-        dados.contratoNome = nome;
-      } else if (contratoRemovido && locacao?.contratoCaminho) {
-        await excluirDocumento(locacao.contratoCaminho);
-        dados.contratoUrl = null;
-        dados.contratoCaminho = null;
-        dados.contratoNome = null;
+      const arquivos = fd.getAll('contrato').filter((a) => a.size > 0);
+      if (arquivos.length) {
+        dados.contratoPaginas = await prepararPaginasDocumento(arquivos);
+      } else if (contratoRemovido) {
+        dados.contratoPaginas = null;
       }
       await salvarLocacao(dados, locacao?.id);
       toast('Locação salva.');
@@ -1680,6 +1718,25 @@ function fecharModal() {
 }
 
 qs('#modal-backdrop').addEventListener('click', (e) => { if (e.target.id === 'modal-backdrop') fecharModal(); });
+
+// Visualizador simples das páginas de um documento/contrato (fotos guardadas em base64).
+function abrirModalPaginas(titulo, paginas) {
+  const html = `
+    <h2 class="mb-4 text-lg font-semibold text-slate-900 dark:text-white">${esc(titulo)}</h2>
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      ${paginas.map((p, i) => `
+        <a href="${p.dados}" target="_blank" rel="noopener" class="block overflow-hidden rounded-xl border border-slate-200 hover:border-indigo-300 dark:border-slate-800 dark:hover:border-indigo-700">
+          <img src="${p.dados}" alt="Página ${i + 1}" class="aspect-[3/4] w-full object-cover" />
+          <p class="truncate bg-slate-50 px-2 py-1 text-[11px] text-slate-500 dark:bg-slate-800 dark:text-slate-400">Página ${i + 1}</p>
+        </a>`).join('')}
+    </div>
+    <div class="flex justify-end pt-4">
+      <button type="button" id="btn-fechar-paginas" class="rounded-xl px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Fechar</button>
+    </div>
+  `;
+  abrirModal(html);
+  qs('#btn-fechar-paginas').addEventListener('click', fecharModal);
+}
 
 function initTema() {
   const salvo = localStorage.getItem('rm-veiculos-tema');
