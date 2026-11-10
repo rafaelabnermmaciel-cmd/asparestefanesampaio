@@ -1,6 +1,7 @@
 import {
   firebaseConfigurado,
   ouvirVeiculos,
+  ouvirVeiculo,
   ouvirFinanciamentos,
   ouvirLocacoes,
   ouvirPagamentos,
@@ -15,6 +16,14 @@ import {
   salvarManutencao,
   carregarFrotaPadrao,
   frotaJaCarregada,
+  observarAuth,
+  fazerLogin,
+  fazerLogout,
+  ouvirPerfil,
+  cadastrarProprietario,
+  ouvirAcessosPendentes,
+  aprovarAcesso,
+  recusarAcesso,
 } from './firestore.js';
 import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js';
 
@@ -30,14 +39,26 @@ const state = {
   manutencoes: [],
   pagina: 'painel',
   pagamentosFiltro: { veiculoId: '', status: '' },
+  auth: { uid: null, email: null, perfil: null },
+  relatorioVeiculoId: '',
+  acessosPendentes: [],
 };
+
+function souAdmin() {
+  return !state.auth.uid || state.auth.perfil?.tipo !== 'proprietario';
+}
+
+function aguardandoAprovacao() {
+  return !!(state.auth.uid && state.auth.perfil?.tipo === 'proprietario' && state.auth.perfil?.status !== 'aprovado');
+}
 
 const NAV = [
   { id: 'painel', label: 'Painel', icon: 'layout-dashboard' },
-  { id: 'veiculos', label: 'Veículos', icon: 'car' },
-  { id: 'locacoes', label: 'Locações', icon: 'users' },
-  { id: 'pagamentos', label: 'Pagamentos', icon: 'wallet' },
-  { id: 'manutencoes', label: 'Manutenções', icon: 'wrench' },
+  { id: 'veiculos', label: 'Veículos', labelMobile: 'Veíc.', icon: 'car' },
+  { id: 'locacoes', label: 'Locações', labelMobile: 'Locaç.', icon: 'users' },
+  { id: 'pagamentos', label: 'Pagamentos', labelMobile: 'Pagtos', icon: 'wallet' },
+  { id: 'manutencoes', label: 'Manutenções', labelMobile: 'Manut.', icon: 'wrench' },
+  { id: 'relatorio', label: 'Relatório', labelMobile: 'Relat.', icon: 'file-text' },
 ];
 
 const DIAS_SEMANA = { domingo: 0, segunda: 1, terca: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6 };
@@ -153,13 +174,14 @@ function ultimaRevisao(veiculoId) {
 
 function renderNav() {
   const itemHtml = (item, mobile) => `
-    <button data-nav="${item.id}" class="nav-btn ${mobile ? 'flex flex-1 flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium transition' : 'flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition'}">
+    <button data-nav="${item.id}" class="nav-btn ${mobile ? 'flex flex-1 flex-col items-center gap-0.5 px-0.5 py-2 text-[9.5px] font-medium leading-tight transition' : 'flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition'}">
       <i data-lucide="${item.icon}" class="${mobile ? 'h-5 w-5' : 'h-[18px] w-[18px] shrink-0'}"></i>
-      ${item.label}
+      ${mobile ? (item.labelMobile || item.label) : item.label}
     </button>`;
 
-  qs('#nav-desktop').innerHTML = NAV.map((i) => itemHtml(i, false)).join('');
-  qs('#nav-mobile').innerHTML = NAV.map((i) => itemHtml(i, true)).join('');
+  const itens = souAdmin() ? NAV : NAV.filter((i) => i.id !== 'veiculos');
+  qs('#nav-desktop').innerHTML = itens.map((i) => itemHtml(i, false)).join('');
+  qs('#nav-mobile').innerHTML = itens.map((i) => itemHtml(i, true)).join('');
 
   document.querySelectorAll('[data-nav]').forEach((btn) => {
     btn.addEventListener('click', () => { location.hash = btn.dataset.nav; });
@@ -200,10 +222,12 @@ const TITULOS = {
   locacoes: ['Locações', 'Histórico de locatários por veículo'],
   pagamentos: ['Pagamentos', 'Controle semanal — toda segunda-feira'],
   manutencoes: ['Manutenções', 'Revisões (tabela BYD) e previsão do próximo marco'],
+  relatorio: ['Relatório', 'Receita, gastos e lucro líquido desde o início da locação'],
 };
 
 function irParaPagina(pagina) {
-  state.pagina = NAV.some((n) => n.id === pagina) ? pagina : 'painel';
+  const itensValidos = souAdmin() ? NAV : NAV.filter((n) => n.id !== 'veiculos');
+  state.pagina = itensValidos.some((n) => n.id === pagina) ? pagina : 'painel';
   document.querySelectorAll('.page').forEach((p) => p.classList.add('hidden'));
   qs(`#page-${state.pagina}`).classList.remove('hidden');
   const [titulo, sub] = TITULOS[state.pagina];
@@ -214,11 +238,13 @@ function irParaPagina(pagina) {
 }
 
 function renderPaginaAtual() {
+  if (aguardandoAprovacao()) { renderAguardandoAprovacao(); return; }
   if (state.pagina === 'painel') renderPainel();
   if (state.pagina === 'veiculos') renderVeiculos();
   if (state.pagina === 'locacoes') renderLocacoes();
   if (state.pagina === 'pagamentos') renderPagamentos();
   if (state.pagina === 'manutencoes') renderManutencoes();
+  if (state.pagina === 'relatorio') renderRelatorio();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -238,6 +264,23 @@ function renderContadores() {
   });
   qs('#contador-contratados').textContent = veiculosAtivos;
   qs('#contador-na-rua').textContent = atrasados;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Tela de espera (proprietário com cadastro ainda não aprovado)
+// ---------------------------------------------------------------------------------------------
+
+function renderAguardandoAprovacao() {
+  const container = qs(`#page-${state.pagina}`);
+  if (!container) return;
+  container.innerHTML = `
+    <div class="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center dark:border-slate-700 dark:bg-slate-900">
+      <i data-lucide="clock" class="h-10 w-10 text-amber-500"></i>
+      <h3 class="text-base font-semibold text-slate-900 dark:text-white">Aguardando aprovação</h3>
+      <p class="max-w-sm text-sm text-slate-500 dark:text-slate-400">Seu cadastro para o veículo <strong>${esc(state.auth.perfil?.placa || '')}</strong> foi recebido. Assim que o administrador aprovar o acesso, você poderá ver aqui a quilometragem, revisões e o relatório do seu carro.</p>
+    </div>
+  `;
+  atualizarIcones();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -329,7 +372,7 @@ function renderPainel() {
           </div>
           ${statusChip}
         </div>
-        ${loc && !(state.pagamentos.find((p) => p.locacaoId === loc.id && p.dataReferencia === statusSemanaLocacao(loc).dataRef && p.status === 'pago')) ? `
+        ${loc && souAdmin() && !(state.pagamentos.find((p) => p.locacaoId === loc.id && p.dataReferencia === statusSemanaLocacao(loc).dataRef && p.status === 'pago')) ? `
         <div class="mb-2.5 flex gap-2">
           <button data-marcar-pago="${loc.id}" data-veiculo="${v.id}" class="flex-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500">✓ Pago (${formatMoeda(loc.valorSemanal)})</button>
           <button data-marcar-naopago="${loc.id}" data-veiculo="${v.id}" class="flex-1 rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20">✗ Não pago</button>
@@ -443,10 +486,11 @@ function renderVeiculos() {
             <span class="badge ${TIPO_RECEITA_LABEL[v.tipoReceita]?.cor || ''}">${TIPO_RECEITA_LABEL[v.tipoReceita]?.label || v.tipoReceita}</span>
           </div>
           <p class="text-xs text-slate-500 dark:text-slate-400">${esc(v.proprietarioNome)}</p>
-          <div class="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 dark:border-slate-800">
+          <div class="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 dark:border-slate-800">
             <span class="text-xs text-slate-400">${v.status === 'ativo' ? 'Ativo' : 'Inativo'}</span>
-            <div>
-              ${v.tipoReceita === 'total' ? `<button data-financiamento="${v.id}" class="mr-3 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Financiamento</button>` : ''}
+            <div class="flex flex-wrap justify-end gap-x-3 gap-y-1">
+              <button data-ver-relatorio="${v.id}" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Relatório</button>
+              ${v.tipoReceita === 'total' ? `<button data-financiamento="${v.id}" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Financiamento</button>` : ''}
               <button data-editar-veiculo="${v.id}" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Editar</button>
             </div>
           </div>
@@ -469,6 +513,7 @@ function renderVeiculos() {
               <td class="px-4 py-3"><span class="badge ${TIPO_RECEITA_LABEL[v.tipoReceita]?.cor || ''}">${TIPO_RECEITA_LABEL[v.tipoReceita]?.label || v.tipoReceita}</span></td>
               <td class="px-4 py-3 text-slate-500 dark:text-slate-400">${v.status === 'ativo' ? 'Ativo' : 'Inativo'}</td>
               <td class="px-4 py-3 text-right whitespace-nowrap">
+                <button data-ver-relatorio="${v.id}" class="mr-3 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Relatório</button>
                 ${v.tipoReceita === 'total' ? `<button data-financiamento="${v.id}" class="mr-3 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Financiamento</button>` : ''}
                 <button data-editar-veiculo="${v.id}" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Editar</button>
               </td>
@@ -488,6 +533,10 @@ function renderVeiculos() {
   });
   container.querySelectorAll('[data-editar-veiculo]').forEach((btn) => btn.addEventListener('click', () => abrirModalVeiculo(veiculoPorId(btn.dataset.editarVeiculo))));
   container.querySelectorAll('[data-financiamento]').forEach((btn) => btn.addEventListener('click', () => abrirModalFinanciamentos(veiculoPorId(btn.dataset.financiamento))));
+  container.querySelectorAll('[data-ver-relatorio]').forEach((btn) => btn.addEventListener('click', () => {
+    state.relatorioVeiculoId = btn.dataset.verRelatorio;
+    location.hash = 'relatorio';
+  }));
 }
 
 function abrirModalVeiculo(veiculo = null) {
@@ -680,9 +729,10 @@ function renderLocacoes() {
   const lista = [...state.locacoes].sort((a, b) => (b.dataRetirada || '').localeCompare(a.dataRetirada || ''));
 
   container.innerHTML = `
+    ${souAdmin() ? `
     <div class="flex justify-end">
       <button id="btn-nova-locacao" class="rounded-xl bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">+ Nova locação</button>
-    </div>
+    </div>` : ''}
     ${lista.length ? `
     <div class="space-y-3 sm:hidden">
       ${lista.map((l) => {
@@ -704,10 +754,11 @@ function renderLocacoes() {
           </div>
           <div class="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 dark:border-slate-800">
             <div>${l.observacoes ? `<button data-ver-observacao="${l.id}" class="text-xs font-medium text-amber-600 hover:underline dark:text-amber-400">📝 Notas</button>` : ''}</div>
+            ${souAdmin() ? `
             <div>
               <button data-editar-locacao="${l.id}" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Editar</button>
               ${l.status === 'ativa' ? `<button data-encerrar-locacao="${l.id}" class="ml-3 text-xs font-medium text-rose-600 hover:underline dark:text-rose-400">Encerrar</button>` : ''}
-            </div>
+            </div>` : ''}
           </div>
         </div>`;
       }).join('')}
@@ -735,8 +786,9 @@ function renderLocacoes() {
               <td class="px-4 py-3"><span class="badge ${STATUS_LOCACAO[l.status]?.cor || ''}">${STATUS_LOCACAO[l.status]?.label || l.status}</span></td>
               <td class="px-4 py-3 text-right whitespace-nowrap">
                 ${l.observacoes ? `<button data-ver-observacao="${l.id}" class="mr-3 text-xs font-medium text-amber-600 hover:underline dark:text-amber-400" title="Ver observações">📝 Notas</button>` : ''}
+                ${souAdmin() ? `
                 <button data-editar-locacao="${l.id}" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Editar</button>
-                ${l.status === 'ativa' ? `<button data-encerrar-locacao="${l.id}" class="ml-3 text-xs font-medium text-rose-600 hover:underline dark:text-rose-400">Encerrar</button>` : ''}
+                ${l.status === 'ativa' ? `<button data-encerrar-locacao="${l.id}" class="ml-3 text-xs font-medium text-rose-600 hover:underline dark:text-rose-400">Encerrar</button>` : ''}` : ''}
               </td>
             </tr>`;
           }).join('') : `<tr><td colspan="8" class="px-4 py-8 text-center text-slate-400">Nenhuma locação cadastrada.</td></tr>`}
@@ -745,7 +797,7 @@ function renderLocacoes() {
     </div>
   `;
 
-  qs('#btn-nova-locacao').addEventListener('click', () => abrirModalLocacao());
+  qs('#btn-nova-locacao')?.addEventListener('click', () => abrirModalLocacao());
   container.querySelectorAll('[data-editar-locacao]').forEach((btn) => btn.addEventListener('click', () => abrirModalLocacao(state.locacoes.find((l) => l.id === btn.dataset.editarLocacao))));
   container.querySelectorAll('[data-ver-observacao]').forEach((btn) => btn.addEventListener('click', () => {
     const l = state.locacoes.find((x) => x.id === btn.dataset.verObservacao);
@@ -903,7 +955,7 @@ function renderPagamentos() {
           </select>
         </label>
       </div>
-      <button id="btn-novo-pagamento" class="rounded-xl bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">+ Novo pagamento</button>
+      ${souAdmin() ? `<button id="btn-novo-pagamento" class="rounded-xl bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">+ Novo pagamento</button>` : ''}
     </div>
     ${itens.length ? `
     <div class="space-y-3 sm:hidden">
@@ -920,10 +972,12 @@ function renderPagamentos() {
             <p class="text-sm font-semibold text-slate-800 dark:text-slate-100">${formatMoeda(p.valor)}</p>
           </div>
           <div class="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 dark:border-slate-800">
+            ${souAdmin() ? `
             <select data-status-pagamento="${p.id}" class="rounded-lg border px-2 py-1 text-xs font-semibold ${STATUS_PAGAMENTO[p.status]?.cor || ''}">
               ${Object.entries(STATUS_PAGAMENTO).map(([v2, s]) => `<option value="${v2}" ${p.status === v2 ? 'selected' : ''}>${s.label}</option>`).join('')}
             </select>
-            <button data-editar-pagamento="${p.id}" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Editar</button>
+            <button data-editar-pagamento="${p.id}" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Editar</button>` : `
+            <span class="badge ${STATUS_PAGAMENTO[p.status]?.cor || ''}">${STATUS_PAGAMENTO[p.status]?.label || p.status}</span>`}
           </div>
         </div>`;
       }).join('')}
@@ -946,12 +1000,13 @@ function renderPagamentos() {
               <td class="px-4 py-3">${esc(v?.placa || '—')} · ${esc(loc?.locatarioNome || '—')}</td>
               <td class="px-4 py-3">${formatMoeda(p.valor)}</td>
               <td class="px-4 py-3">
+                ${souAdmin() ? `
                 <select data-status-pagamento="${p.id}" class="rounded-lg border px-2 py-1 text-xs font-semibold ${STATUS_PAGAMENTO[p.status]?.cor || ''}">
                   ${Object.entries(STATUS_PAGAMENTO).map(([v2, s]) => `<option value="${v2}" ${p.status === v2 ? 'selected' : ''}>${s.label}</option>`).join('')}
-                </select>
+                </select>` : `<span class="badge ${STATUS_PAGAMENTO[p.status]?.cor || ''}">${STATUS_PAGAMENTO[p.status]?.label || p.status}</span>`}
               </td>
               <td class="px-4 py-3 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">${formatDateBR(p.dataPagamentoReal)}</td>
-              <td class="px-4 py-3 text-right"><button data-editar-pagamento="${p.id}" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Editar</button></td>
+              <td class="px-4 py-3 text-right">${souAdmin() ? `<button data-editar-pagamento="${p.id}" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Editar</button>` : ''}</td>
             </tr>`;
           }).join('') : `<tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">Nenhum pagamento encontrado.</td></tr>`}
         </tbody>
@@ -961,7 +1016,7 @@ function renderPagamentos() {
 
   qs('#f-veiculo').addEventListener('change', (e) => { state.pagamentosFiltro.veiculoId = e.target.value; renderPagamentos(); });
   qs('#f-status').addEventListener('change', (e) => { state.pagamentosFiltro.status = e.target.value; renderPagamentos(); });
-  qs('#btn-novo-pagamento').addEventListener('click', () => abrirModalPagamento());
+  qs('#btn-novo-pagamento')?.addEventListener('click', () => abrirModalPagamento());
   container.querySelectorAll('[data-editar-pagamento]').forEach((btn) => btn.addEventListener('click', () => abrirModalPagamento(state.pagamentos.find((p) => p.id === btn.dataset.editarPagamento))));
   container.querySelectorAll('[data-status-pagamento]').forEach((sel) => sel.addEventListener('change', async (e) => {
     await definirStatusPagamento(sel.dataset.statusPagamento, e.target.value);
@@ -1071,9 +1126,10 @@ function renderManutencoes() {
   container.innerHTML = `
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">${resumoHtml || '<p class="text-sm text-slate-400">Nenhum veículo cadastrado.</p>'}</div>
 
+    ${souAdmin() ? `
     <div class="flex justify-end">
       <button id="btn-nova-manutencao" class="rounded-xl bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">+ Registrar manutenção</button>
-    </div>
+    </div>` : ''}
 
     ${historico.length ? `
     <div class="space-y-2 sm:hidden">
@@ -1105,7 +1161,7 @@ function renderManutencoes() {
     </div>
   `;
 
-  qs('#btn-nova-manutencao').addEventListener('click', () => abrirModalManutencao());
+  qs('#btn-nova-manutencao')?.addEventListener('click', () => abrirModalManutencao());
 }
 
 function abrirModalManutencao() {
@@ -1168,6 +1224,143 @@ function abrirModalManutencao() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Relatório (lucro líquido por mês, desde o início da locação)
+// ---------------------------------------------------------------------------------------------
+
+function mesesEntre(inicioISO, fimISO) {
+  const meses = [];
+  let [ano, mes] = inicioISO.slice(0, 7).split('-').map(Number);
+  const [anoFim, mesFim] = fimISO.slice(0, 7).split('-').map(Number);
+  while (ano < anoFim || (ano === anoFim && mes <= mesFim)) {
+    meses.push(`${ano}-${String(mes).padStart(2, '0')}`);
+    mes++;
+    if (mes > 12) { mes = 1; ano++; }
+  }
+  return meses;
+}
+
+function nomeMes(mesISO) {
+  const [ano, mes] = mesISO.split('-').map(Number);
+  const nomes = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+  return `${nomes[mes - 1]}/${String(ano).slice(2)}`;
+}
+
+function renderRelatorio() {
+  const container = qs('#page-relatorio');
+  const veiculoId = souAdmin() ? state.relatorioVeiculoId : state.auth.perfil?.veiculoId;
+
+  if (souAdmin() && !veiculoId) {
+    container.innerHTML = `
+      <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <p class="mb-4 text-sm text-slate-500 dark:text-slate-400">Escolha um veículo pra ver o relatório:</p>
+        <div class="flex flex-wrap gap-2">
+          ${state.veiculos.map((v) => `<button data-escolher-relatorio="${v.id}" class="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-800 dark:text-slate-300 dark:hover:border-indigo-700">${esc(v.placa)}</button>`).join('') || '<p class="text-sm text-slate-400">Nenhum veículo cadastrado.</p>'}
+        </div>
+      </div>`;
+    container.querySelectorAll('[data-escolher-relatorio]').forEach((btn) => btn.addEventListener('click', () => {
+      state.relatorioVeiculoId = btn.dataset.escolherRelatorio;
+      renderRelatorio();
+    }));
+    return;
+  }
+
+  const v = veiculoPorId(veiculoId);
+  if (!v) {
+    container.innerHTML = '<p class="text-sm text-slate-400">Veículo não encontrado.</p>';
+    return;
+  }
+
+  const pagamentosPagos = state.pagamentos.filter((p) => p.veiculoId === veiculoId && p.status === 'pago');
+  const manuts = manutencoesDoVeiculo(veiculoId);
+  const fins = financiamentosDoVeiculo(veiculoId);
+  const parcelaMensal = fins.reduce((s, f) => s + Number(f.parcela || 0), 0);
+  const protecaoMensal = Number(v.protecaoVeicularMensal || 0);
+  const taxaAdmin = Number(v.taxaAdministracaoMensal || 0);
+  const ehAdministracao = v.tipoReceita === 'administracao';
+
+  const inicio = v.dataInicioOperacao || pagamentosPagos[0]?.dataReferencia || hojeISO();
+  const meses = mesesEntre(inicio, hojeISO());
+
+  let totAluguel = 0, totAdmin = 0, totManut = 0, totParcela = 0, totProtecao = 0, totLiquido = 0;
+  const linhas = meses.map((mes) => {
+    const aluguel = pagamentosPagos.filter((p) => (p.dataReferencia || '').startsWith(mes)).reduce((s, p) => s + Number(p.valor || 0), 0);
+    const manutencao = manuts.filter((m) => (m.dataRealizada || '').startsWith(mes)).reduce((s, m) => s + Number(m.valor || 0), 0);
+    const administracao = ehAdministracao && aluguel > 0 ? taxaAdmin : 0;
+    const parcela = ehAdministracao ? 0 : parcelaMensal;
+    const protecao = protecaoMensal;
+    const liquido = aluguel - administracao - manutencao - parcela - protecao;
+    totAluguel += aluguel; totAdmin += administracao; totManut += manutencao; totParcela += parcela; totProtecao += protecao; totLiquido += liquido;
+    return { mes, aluguel, administracao, manutencao, parcela, protecao, liquido };
+  });
+
+  container.innerHTML = `
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <p class="text-xs text-slate-400">Veículo</p>
+        <p class="text-sm font-semibold text-slate-900 dark:text-white">${esc(v.placa)} <span class="font-normal text-slate-400">· ${esc(v.proprietarioNome)}</span></p>
+      </div>
+      <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <p class="text-xs text-slate-400">Aluguel recebido (total)</p>
+        <p class="text-lg font-semibold text-slate-900 dark:text-white">${formatMoeda(totAluguel)}</p>
+      </div>
+      <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <p class="text-xs text-slate-400">Gastos (${ehAdministracao ? 'administração + manutenção + proteção' : 'financiamento + manutenção + proteção'})</p>
+        <p class="text-lg font-semibold text-rose-600 dark:text-rose-400">-${formatMoeda(totAdmin + totManut + totParcela + totProtecao)}</p>
+      </div>
+      <div class="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm dark:border-indigo-900 dark:bg-indigo-500/10">
+        <p class="text-xs text-indigo-600 dark:text-indigo-400">Líquido desde o início</p>
+        <p class="text-lg font-semibold text-indigo-700 dark:text-indigo-300">${formatMoeda(totLiquido)}</p>
+      </div>
+    </div>
+
+    <div class="space-y-2 sm:hidden">
+      ${linhas.map((l) => `
+        <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div class="flex items-center justify-between">
+            <p class="text-sm font-medium text-slate-800 dark:text-slate-100">${nomeMes(l.mes)}</p>
+            <p class="text-sm font-semibold ${l.liquido >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">${formatMoeda(l.liquido)}</p>
+          </div>
+          <p class="mt-1 text-[11px] text-slate-400">Aluguel ${formatMoeda(l.aluguel)}${l.administracao ? ` · Admin. -${formatMoeda(l.administracao)}` : ''}${l.parcela ? ` · Financ. -${formatMoeda(l.parcela)}` : ''}${l.manutencao ? ` · Manut. -${formatMoeda(l.manutencao)}` : ''} · Proteção -${formatMoeda(l.protecao)}</p>
+        </div>`).join('')}
+    </div>
+    <div class="hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm sm:block dark:border-slate-800 dark:bg-slate-900">
+      <table class="w-full text-left text-sm">
+        <thead class="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400 dark:border-slate-800">
+          <tr>
+            <th class="px-4 py-3">Mês</th><th class="px-4 py-3">Aluguel</th>
+            <th class="px-4 py-3">${ehAdministracao ? 'Administração' : 'Financiamento'}</th>
+            <th class="px-4 py-3">Manutenção</th><th class="px-4 py-3">Proteção</th><th class="px-4 py-3">Líquido</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${linhas.map((l) => `
+            <tr class="border-b border-slate-50 last:border-0 dark:border-slate-800/60">
+              <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">${nomeMes(l.mes)}</td>
+              <td class="px-4 py-3">${formatMoeda(l.aluguel)}</td>
+              <td class="px-4 py-3 text-slate-500 dark:text-slate-400">${formatMoeda(ehAdministracao ? l.administracao : l.parcela)}</td>
+              <td class="px-4 py-3 text-slate-500 dark:text-slate-400">${formatMoeda(l.manutencao)}</td>
+              <td class="px-4 py-3 text-slate-500 dark:text-slate-400">${formatMoeda(l.protecao)}</td>
+              <td class="px-4 py-3 font-semibold ${l.liquido >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">${formatMoeda(l.liquido)}</td>
+            </tr>`).join('')}
+        </tbody>
+        <tfoot>
+          <tr class="border-t border-slate-200 font-semibold dark:border-slate-700">
+            <td class="px-4 py-3">Total</td>
+            <td class="px-4 py-3">${formatMoeda(totAluguel)}</td>
+            <td class="px-4 py-3">${formatMoeda(ehAdministracao ? totAdmin : totParcela)}</td>
+            <td class="px-4 py-3">${formatMoeda(totManut)}</td>
+            <td class="px-4 py-3">${formatMoeda(totProtecao)}</td>
+            <td class="px-4 py-3 ${totLiquido >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">${formatMoeda(totLiquido)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    ${souAdmin() ? `<button id="btn-trocar-veiculo-relatorio" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">← Escolher outro veículo</button>` : ''}
+  `;
+  qs('#btn-trocar-veiculo-relatorio')?.addEventListener('click', () => { state.relatorioVeiculoId = ''; renderRelatorio(); });
+}
+
+// ---------------------------------------------------------------------------------------------
 // Modal genérico + tema
 // ---------------------------------------------------------------------------------------------
 
@@ -1203,6 +1396,188 @@ function atualizarLabelTema() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Conta (login dos proprietários — opcional, o administrador não precisa logar)
+// ---------------------------------------------------------------------------------------------
+
+function atualizarBotaoConta() {
+  const label = qs('#btn-conta-label');
+  const badge = qs('#btn-conta-badge');
+  if (!label) return;
+  if (state.auth.uid) {
+    if (state.auth.perfil?.tipo === 'proprietario') {
+      label.textContent = aguardandoAprovacao() ? 'Pendente' : (state.auth.perfil.placa || 'Minha conta');
+    } else {
+      label.textContent = 'Admin';
+    }
+  } else {
+    label.textContent = 'Entrar';
+  }
+  if (badge) {
+    const pendentes = souAdmin() ? state.acessosPendentes.length : 0;
+    badge.textContent = String(pendentes);
+    badge.classList.toggle('hidden', pendentes === 0);
+  }
+}
+
+function htmlAcessosPendentes() {
+  if (!state.acessosPendentes.length) {
+    return `<p class="text-xs text-slate-400">Nenhum cadastro aguardando aprovação.</p>`;
+  }
+  return `
+    <div class="space-y-2">
+      ${state.acessosPendentes.map((a) => `
+        <div class="flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900 dark:bg-amber-500/10">
+          <div class="min-w-0">
+            <p class="truncate text-sm font-medium text-slate-900 dark:text-white">${esc(a.email)}</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Placa ${esc(a.placa)}</p>
+          </div>
+          <div class="flex shrink-0 gap-1.5">
+            <button type="button" data-aprovar="${a.id}" class="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-emerald-500">Aprovar</button>
+            <button type="button" data-recusar="${a.id}" class="rounded-lg bg-rose-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-rose-500">Recusar</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function wireAcessosPendentes() {
+  document.querySelectorAll('[data-aprovar]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try { await aprovarAcesso(btn.dataset.aprovar); toast('Acesso aprovado.'); } catch (e) { toast(e.message); btn.disabled = false; }
+    });
+  });
+  document.querySelectorAll('[data-recusar]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try { await recusarAcesso(btn.dataset.recusar); toast('Cadastro recusado.'); } catch (e) { toast(e.message); btn.disabled = false; }
+    });
+  });
+}
+
+function abrirModalConta() {
+  if (state.auth.uid) {
+    const pendente = aguardandoAprovacao();
+    const html = `
+      <h2 class="mb-1 text-lg font-semibold text-slate-900 dark:text-white">Sua conta</h2>
+      <p class="mb-4 text-sm text-slate-500 dark:text-slate-400">${esc(state.auth.email)} · ${state.auth.perfil?.tipo === 'proprietario' ? `Proprietário${state.auth.perfil.placa ? ' · ' + esc(state.auth.perfil.placa) : ''}` : 'Administrador'}</p>
+      ${pendente ? `<p class="mb-4 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">Seu cadastro ainda está aguardando aprovação do administrador.</p>` : ''}
+      ${souAdmin() ? `
+        <h3 class="mb-2 mt-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Cadastros pendentes</h3>
+        ${htmlAcessosPendentes()}
+      ` : ''}
+      <div class="flex justify-end gap-2 pt-4">
+        <button type="button" id="btn-fechar-conta" class="rounded-xl px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Fechar</button>
+        <button type="button" id="btn-sair" class="rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-500">Sair</button>
+      </div>
+    `;
+    abrirModal(html);
+    qs('#btn-fechar-conta').addEventListener('click', fecharModal);
+    qs('#btn-sair').addEventListener('click', async () => {
+      try { await fazerLogout(); toast('Você saiu.'); fecharModal(); } catch (e) { toast(e.message); }
+    });
+    wireAcessosPendentes();
+  } else {
+    const htmlLogin = () => `
+      <h2 class="mb-1 text-lg font-semibold text-slate-900 dark:text-white">Entrar</h2>
+      <p class="mb-4 text-xs text-slate-400">Só precisa entrar se você for proprietário de um dos veículos.</p>
+      <form id="form-login" class="space-y-3">
+        <label class="block text-xs text-slate-500 dark:text-slate-400">E-mail
+          <input required type="email" name="email" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+        </label>
+        <label class="block text-xs text-slate-500 dark:text-slate-400">Senha
+          <input required type="password" name="senha" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+        </label>
+        <div class="flex items-center justify-between pt-1">
+          <button type="button" id="btn-ir-cadastro" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Ainda não tenho conta</button>
+        </div>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" id="btn-cancelar" class="rounded-xl px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Cancelar</button>
+          <button type="submit" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">Entrar</button>
+        </div>
+      </form>
+      ${souAdmin() ? `
+        <div class="mt-5 border-t border-slate-100 pt-4 dark:border-slate-800">
+          <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Cadastros pendentes</h3>
+          ${htmlAcessosPendentes()}
+        </div>
+      ` : ''}
+    `;
+    const htmlCadastro = () => `
+      <h2 class="mb-1 text-lg font-semibold text-slate-900 dark:text-white">Criar conta de proprietário</h2>
+      <p class="mb-4 text-xs text-slate-400">Informe a placa do seu veículo — ela é usada para localizar seus dados. Seu acesso fica pendente até o administrador aprovar.</p>
+      <form id="form-cadastro" class="space-y-3">
+        <label class="block text-xs text-slate-500 dark:text-slate-400">Placa do veículo
+          <input required name="placa" placeholder="ABC1D23" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm uppercase dark:border-slate-800 dark:bg-slate-900" />
+        </label>
+        <label class="block text-xs text-slate-500 dark:text-slate-400">E-mail
+          <input required type="email" name="email" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+        </label>
+        <label class="block text-xs text-slate-500 dark:text-slate-400">Senha
+          <input required type="password" name="senha" minlength="6" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+        </label>
+        <div class="flex items-center justify-between pt-1">
+          <button type="button" id="btn-ir-login" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Já tenho conta</button>
+        </div>
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" id="btn-cancelar" class="rounded-xl px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Cancelar</button>
+          <button type="submit" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">Criar conta</button>
+        </div>
+      </form>
+    `;
+
+    const wireLogin = () => {
+      qs('#btn-cancelar').addEventListener('click', fecharModal);
+      qs('#btn-ir-cadastro').addEventListener('click', () => { abrirModal(htmlCadastro()); wireCadastro(); });
+      qs('#form-login').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const botao = e.target.querySelector('button[type=submit]');
+        botao.disabled = true;
+        try {
+          await fazerLogin(fd.get('email').trim(), fd.get('senha'));
+          toast('Login feito.');
+          fecharModal();
+        } catch (err) {
+          botao.disabled = false;
+          toast('E-mail ou senha incorretos.');
+        }
+      });
+      wireAcessosPendentes();
+    };
+
+    const wireCadastro = () => {
+      qs('#btn-cancelar').addEventListener('click', fecharModal);
+      qs('#btn-ir-login').addEventListener('click', () => { abrirModal(htmlLogin()); wireLogin(); });
+      qs('#form-cadastro').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        const botao = e.target.querySelector('button[type=submit]');
+        botao.disabled = true;
+        try {
+          await cadastrarProprietario(fd.get('email').trim(), fd.get('senha'), fd.get('placa'));
+          toast('Conta criada! Aguarde a aprovação do administrador.');
+          fecharModal();
+        } catch (err) {
+          botao.disabled = false;
+          if (String(err.code || err.message).includes('email-already-in-use')) {
+            toast('Esse e-mail já está cadastrado.');
+          } else if (String(err.code || err.message).includes('weak-password')) {
+            toast('Senha muito curta — use pelo menos 6 caracteres.');
+          } else {
+            toast(err.message);
+          }
+        }
+      });
+    };
+
+    abrirModal(htmlLogin());
+    wireLogin();
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------------------------
 
@@ -1211,24 +1586,79 @@ function reRenderTudo() {
   renderPaginaAtual();
 }
 
-function init() {
+let pararListenersDados = [];
+
+function pararOuvintesDados() {
+  pararListenersDados.forEach((unsub) => { try { unsub && unsub(); } catch (e) { /* noop */ } });
+  pararListenersDados = [];
+}
+
+function iniciarOuvintesConformeAuth() {
+  pararOuvintesDados();
+  state.veiculos = [];
+  state.financiamentos = [];
+  state.locacoes = [];
+  state.pagamentos = [];
+  state.manutencoes = [];
+  state.relatorioVeiculoId = '';
+
+  if (state.auth.perfil?.tipo === 'proprietario') {
+    if (state.auth.perfil.status === 'aprovado') {
+      const veiculoId = state.auth.perfil.veiculoId;
+      pararListenersDados.push(ouvirVeiculo(veiculoId, (v) => { state.veiculos = v ? [v] : []; reRenderTudo(); }));
+      pararListenersDados.push(ouvirFinanciamentos((d) => { state.financiamentos = d; reRenderTudo(); }, veiculoId));
+      pararListenersDados.push(ouvirLocacoes((d) => { state.locacoes = d; reRenderTudo(); }, veiculoId));
+      pararListenersDados.push(ouvirPagamentos((d) => { state.pagamentos = d; reRenderTudo(); }, veiculoId));
+      pararListenersDados.push(ouvirManutencoes((d) => { state.manutencoes = d; reRenderTudo(); }, veiculoId));
+    }
+  } else {
+    pararListenersDados.push(ouvirVeiculos((d) => { state.veiculos = d; reRenderTudo(); }));
+    pararListenersDados.push(ouvirFinanciamentos((d) => { state.financiamentos = d; reRenderTudo(); }));
+    pararListenersDados.push(ouvirLocacoes((d) => { state.locacoes = d; reRenderTudo(); }));
+    pararListenersDados.push(ouvirPagamentos((d) => { state.pagamentos = d; reRenderTudo(); }));
+    pararListenersDados.push(ouvirManutencoes((d) => { state.manutencoes = d; reRenderTudo(); }));
+  }
+
   renderNav();
+  atualizarBotaoConta();
+  irParaPagina(location.hash.slice(1) || 'painel');
+}
+
+let pararOuvirPerfil = null;
+
+function init() {
   initTema();
+  qs('#btn-conta').addEventListener('click', () => abrirModalConta());
 
   if (!firebaseConfigurado) {
     qs('#aviso-config').classList.remove('hidden');
+    renderNav();
     irParaPagina((location.hash || '#painel').slice(1));
     return;
   }
 
-  ouvirVeiculos((dados) => { state.veiculos = dados; reRenderTudo(); });
-  ouvirFinanciamentos((dados) => { state.financiamentos = dados; reRenderTudo(); });
-  ouvirLocacoes((dados) => { state.locacoes = dados; reRenderTudo(); });
-  ouvirPagamentos((dados) => { state.pagamentos = dados; reRenderTudo(); });
-  ouvirManutencoes((dados) => { state.manutencoes = dados; reRenderTudo(); });
-
   window.addEventListener('hashchange', () => irParaPagina(location.hash.slice(1)));
-  irParaPagina((location.hash || '#painel').slice(1));
+
+  // Sempre ativo (mesmo sem login), pra avisar o administrador de cadastros novos à espera.
+  ouvirAcessosPendentes((lista) => {
+    state.acessosPendentes = lista;
+    atualizarBotaoConta();
+  });
+
+  observarAuth((user) => {
+    if (pararOuvirPerfil) { pararOuvirPerfil(); pararOuvirPerfil = null; }
+    if (user) {
+      // Listener (não leitura única): se o administrador aprovar o acesso com a tela já aberta,
+      // o proprietário passa a ver os dados na hora, sem precisar sair e entrar de novo.
+      pararOuvirPerfil = ouvirPerfil(user.uid, (perfil) => {
+        state.auth = { uid: user.uid, email: user.email, perfil };
+        iniciarOuvintesConformeAuth();
+      });
+    } else {
+      state.auth = { uid: null, email: null, perfil: null };
+      iniciarOuvintesConformeAuth();
+    }
+  });
 }
 
 init();
