@@ -1299,6 +1299,8 @@ function datasCobrancaLocacao(loc) {
 // precisar lançar manualmente cada semana de locatários que já saíram.
 function aluguelPorMesDoVeiculo(veiculoId) {
   const aluguelPorMes = {};
+  const aluguelPorLocacao = {};
+  const semanasPorLocacao = {};
   locacoesDoVeiculo(veiculoId).forEach((loc) => {
     const pagamentosDaLocacao = state.pagamentos.filter((p) => p.locacaoId === loc.id && p.status === 'pago');
     const datasRegistradas = new Set();
@@ -1307,14 +1309,18 @@ function aluguelPorMesDoVeiculo(veiculoId) {
       if (!mes) return;
       datasRegistradas.add(p.dataReferencia);
       aluguelPorMes[mes] = (aluguelPorMes[mes] || 0) + Number(p.valor || 0);
+      aluguelPorLocacao[loc.id] = (aluguelPorLocacao[loc.id] || 0) + Number(p.valor || 0);
     });
-    datasCobrancaLocacao(loc).forEach((dataRef) => {
+    const datasContrato = datasCobrancaLocacao(loc);
+    datasContrato.forEach((dataRef) => {
       if (datasRegistradas.has(dataRef)) return;
       const mes = dataRef.slice(0, 7);
       aluguelPorMes[mes] = (aluguelPorMes[mes] || 0) + Number(loc.valorSemanal || 0);
+      aluguelPorLocacao[loc.id] = (aluguelPorLocacao[loc.id] || 0) + Number(loc.valorSemanal || 0);
     });
+    semanasPorLocacao[loc.id] = datasContrato.length;
   });
-  return aluguelPorMes;
+  return { aluguelPorMes, aluguelPorLocacao, semanasPorLocacao };
 }
 
 function renderRelatorio() {
@@ -1349,7 +1355,8 @@ function renderRelatorio() {
   const taxaAdmin = Number(v.taxaAdministracaoMensal || 0);
   const ehAdministracao = v.tipoReceita === 'administracao';
 
-  const aluguelPorMes = aluguelPorMesDoVeiculo(veiculoId);
+  const { aluguelPorMes, aluguelPorLocacao, semanasPorLocacao } = aluguelPorMesDoVeiculo(veiculoId);
+  const contratos = [...locacoesDoVeiculo(veiculoId)].sort((a, b) => (a.dataRetirada || '').localeCompare(b.dataRetirada || ''));
   const primeiraLocacao = locacoesDoVeiculo(veiculoId).reduce((maisAntiga, l) => (
     !maisAntiga || (l.dataRetirada || '') < maisAntiga ? l.dataRetirada : maisAntiga
   ), null);
@@ -1366,6 +1373,21 @@ function renderRelatorio() {
     const liquido = aluguel - administracao - manutencao - parcela - protecao;
     totAluguel += aluguel; totAdmin += administracao; totManut += manutencao; totParcela += parcela; totProtecao += protecao; totLiquido += liquido;
     return { mes, aluguel, administracao, manutencao, parcela, protecao, liquido };
+  });
+
+  const linhasContratos = contratos.map((loc) => {
+    const ativa = loc.status === 'ativa';
+    const devolucao = ativa ? (loc.dataFim || null) : (loc.dataFimReal || loc.dataFim || null);
+    const caucaoTexto = loc.caucaoValor ? `${formatMoeda(loc.caucaoValor)}${loc.caucaoStatus ? ` (${loc.caucaoStatus})` : ''}` : '—';
+    return {
+      nome: loc.locatarioNome,
+      retirada: loc.dataRetirada,
+      devolucao,
+      ativa,
+      semanas: semanasPorLocacao[loc.id] || 0,
+      caucaoTexto,
+      aluguel: aluguelPorLocacao[loc.id] || 0,
+    };
   });
 
   container.innerHTML = `
@@ -1400,7 +1422,41 @@ function renderRelatorio() {
       </div>
       <p class="mt-2 text-[11px] text-slate-400">Desde ${formatDateBR(inicio)} (início da operação deste veículo). Semana sem pagamento lançado no app conta pelo valor combinado em contrato; mês sem locatário não conta aluguel nem ${ehAdministracao ? 'administração' : 'parcela'}.</p>
 
-      <div class="mt-4 space-y-2 sm:hidden">
+      <h3 class="mb-2 mt-6 text-sm font-semibold text-slate-700 dark:text-slate-200">Contratos</h3>
+      <div class="space-y-2 sm:hidden">
+        ${linhasContratos.map((c) => `
+          <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div class="flex items-center justify-between">
+              <p class="text-sm font-medium text-slate-800 dark:text-slate-100">${esc(c.nome)}</p>
+              <p class="text-sm font-semibold text-slate-900 dark:text-white">${formatMoeda(c.aluguel)}</p>
+            </div>
+            <p class="mt-1 text-[11px] text-slate-400">${formatDateBR(c.retirada)} → ${c.ativa ? `contrato até ${formatDateBR(c.devolucao)}` : formatDateBR(c.devolucao)} · ${c.semanas} semana(s) · Caução ${c.caucaoTexto}</p>
+          </div>`).join('')}
+      </div>
+      <div class="hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm sm:block dark:border-slate-800 dark:bg-slate-900">
+        <table class="w-full text-left text-sm">
+          <thead class="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400 dark:border-slate-800">
+            <tr>
+              <th class="px-4 py-3">Locatário</th><th class="px-4 py-3">Retirada</th><th class="px-4 py-3">Devolução</th>
+              <th class="px-4 py-3">Semanas</th><th class="px-4 py-3">Caução</th><th class="px-4 py-3">Aluguel</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${linhasContratos.map((c) => `
+              <tr class="border-b border-slate-50 last:border-0 dark:border-slate-800/60">
+                <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">${esc(c.nome)}</td>
+                <td class="px-4 py-3">${formatDateBR(c.retirada)}</td>
+                <td class="px-4 py-3">${c.ativa ? `<span class="text-slate-400">contrato até</span> ${formatDateBR(c.devolucao)}` : formatDateBR(c.devolucao)}</td>
+                <td class="px-4 py-3">${c.semanas}</td>
+                <td class="px-4 py-3 text-slate-500 dark:text-slate-400">${c.caucaoTexto}</td>
+                <td class="px-4 py-3 font-semibold text-slate-800 dark:text-slate-100">${formatMoeda(c.aluguel)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="mb-2 mt-6 text-sm font-semibold text-slate-700 dark:text-slate-200">Mês a mês</h3>
+      <div class="space-y-2 sm:hidden">
         ${linhas.map((l) => `
           <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div class="flex items-center justify-between">
@@ -1457,6 +1513,32 @@ function renderRelatorio() {
         </div>
       </div>
 
+      <h2 class="mb-2 text-sm font-bold uppercase tracking-wide">Contratos</h2>
+      <table class="mb-6 w-full border-collapse text-sm">
+        <thead>
+          <tr class="border-b-2 border-slate-800">
+            <th class="py-2 text-left">Locatário</th>
+            <th class="py-2 text-left">Retirada</th>
+            <th class="py-2 text-left">Devolução</th>
+            <th class="py-2 pr-6 text-right">Semanas</th>
+            <th class="py-2 text-left">Caução</th>
+            <th class="py-2 text-right">Aluguel</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${linhasContratos.map((c) => `
+            <tr class="border-b border-slate-300">
+              <td class="py-1.5">${esc(c.nome)}</td>
+              <td class="py-1.5">${formatDateBR(c.retirada)}</td>
+              <td class="py-1.5">${c.ativa ? `(contrato até) ${formatDateBR(c.devolucao)}` : formatDateBR(c.devolucao)}</td>
+              <td class="py-1.5 pr-6 text-right">${c.semanas}</td>
+              <td class="py-1.5">${c.caucaoTexto}</td>
+              <td class="py-1.5 text-right font-semibold">${formatMoeda(c.aluguel)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+
+      <h2 class="mb-2 text-sm font-bold uppercase tracking-wide">Mês a mês</h2>
       <table class="w-full border-collapse text-sm">
         <thead>
           <tr class="border-b-2 border-slate-800">
