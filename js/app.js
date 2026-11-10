@@ -314,15 +314,15 @@ function renderPainel() {
     }
 
     return `
-      <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div class="mb-3 flex items-start justify-between gap-2">
+      <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 dark:border-slate-800 dark:bg-slate-900">
+        <div class="mb-2.5 flex items-start justify-between gap-2">
           <div>
             <p class="text-sm font-semibold text-slate-900 dark:text-white">${esc(v.placa)}</p>
             <p class="text-xs text-slate-400">${esc(v.modelo)} · ${esc(v.cor || '')}</p>
           </div>
           <span class="badge ${TIPO_RECEITA_LABEL[v.tipoReceita]?.cor || ''}">${TIPO_RECEITA_LABEL[v.tipoReceita]?.label || v.tipoReceita}</span>
         </div>
-        <div class="mb-3 flex items-center justify-between rounded-xl border border-slate-100 px-3 py-2 dark:border-slate-800">
+        <div class="mb-2.5 flex items-center justify-between rounded-xl border border-slate-100 px-3 py-1.5 dark:border-slate-800">
           <div>
             <p class="text-xs text-slate-400">Locatário</p>
             <p class="text-sm font-medium text-slate-800 dark:text-slate-100">${loc ? esc(loc.locatarioNome) : '—'}</p>
@@ -330,15 +330,15 @@ function renderPainel() {
           ${statusChip}
         </div>
         ${loc && !(state.pagamentos.find((p) => p.locacaoId === loc.id && p.dataReferencia === statusSemanaLocacao(loc).dataRef && p.status === 'pago')) ? `
-        <div class="mb-3 flex gap-2">
+        <div class="mb-2.5 flex gap-2">
           <button data-marcar-pago="${loc.id}" data-veiculo="${v.id}" class="flex-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500">✓ Pago (${formatMoeda(loc.valorSemanal)})</button>
           <button data-marcar-naopago="${loc.id}" data-veiculo="${v.id}" class="flex-1 rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20">✗ Não pago</button>
         </div>` : ''}
-        <div class="mb-3">
+        <div class="mb-2.5">
           <p class="text-xs font-medium uppercase tracking-wide text-slate-400">Próxima revisão</p>
           ${proxRevisaoHtml}
         </div>
-        <div class="border-t border-slate-100 pt-3 dark:border-slate-800">
+        <div class="border-t border-slate-100 pt-2.5 dark:border-slate-800">
           <div class="flex items-center justify-between">
             <p class="text-xs text-slate-400">Lucro previsto do mês (${mesAtual.split('-').reverse().join('/')})</p>
             <p class="text-sm font-semibold ${receitaMes >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">${formatMoeda(receitaMes)}</p>
@@ -354,18 +354,18 @@ function renderPainel() {
   }).join('');
 
   container.innerHTML = `
-    <div class="grid gap-4 sm:grid-cols-3">
-      <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <p class="text-xs font-medium uppercase tracking-wide text-slate-400">Lucro previsto do mês (líquido)</p>
-        <p class="mt-2 text-3xl font-semibold text-indigo-600 dark:text-indigo-400">${formatMoeda(receitaMesTotal)}</p>
+    <div class="grid grid-cols-3 gap-2 sm:gap-4">
+      <div class="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-6 dark:border-slate-800 dark:bg-slate-900">
+        <p class="text-[10px] font-medium uppercase tracking-wide text-slate-400 sm:text-xs">Lucro do mês</p>
+        <p class="mt-1 text-base font-semibold text-indigo-600 sm:mt-2 sm:text-3xl dark:text-indigo-400">${formatMoeda(receitaMesTotal)}</p>
       </div>
-      <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <p class="text-xs font-medium uppercase tracking-wide text-slate-400">Pagamentos atrasados</p>
-        <p class="mt-2 text-3xl font-semibold ${atrasados ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}">${atrasados}</p>
+      <div class="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-6 dark:border-slate-800 dark:bg-slate-900">
+        <p class="text-[10px] font-medium uppercase tracking-wide text-slate-400 sm:text-xs">Atrasados</p>
+        <p class="mt-1 text-base font-semibold sm:mt-2 sm:text-3xl ${atrasados ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}">${atrasados}</p>
       </div>
-      <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <p class="text-xs font-medium uppercase tracking-wide text-slate-400">Revisões em até 30 dias</p>
-        <p class="mt-2 text-3xl font-semibold ${revisoesProximas ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}">${revisoesProximas}</p>
+      <div class="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-6 dark:border-slate-800 dark:bg-slate-900">
+        <p class="text-[10px] font-medium uppercase tracking-wide text-slate-400 sm:text-xs">Revisões 30d</p>
+        <p class="mt-1 text-base font-semibold sm:mt-2 sm:text-3xl ${revisoesProximas ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}">${revisoesProximas}</p>
       </div>
     </div>
 
