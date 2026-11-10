@@ -110,6 +110,14 @@ function formatMoeda(v) {
   return (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+// Texto do custo da próxima revisão: até 100 mil km é garantia (grátis, não é gasto de
+// verdade); só a partir de 120 mil km o proprietário paga e aí sim mostra o valor da tabela.
+function custoRevisaoHtml(prox, classeMuted) {
+  if (prox.gratuita) return ` <span class="font-normal ${classeMuted}">· grátis (garantia)</span>`;
+  if (prox.valorPrevisto) return ` <span class="font-normal ${classeMuted}">· ~${formatMoeda(prox.valorPrevisto)}</span>`;
+  return '';
+}
+
 function diffDiasISO(a, b) {
   const da = new Date(`${a}T00:00:00`);
   const db_ = new Date(`${b}T00:00:00`);
@@ -362,7 +370,7 @@ function renderPainel() {
       const diasAlerta = diffDiasISO(hoje, prox.dataEstimativa || prox.dataLimite);
       if (diasAlerta <= 30) revisoesProximas++;
       proxRevisaoHtml = `
-        <p class="text-sm font-medium text-slate-700 dark:text-slate-200">${prox.kmPrevisto.toLocaleString('pt-BR')} km${prox.valorPrevisto ? ` <span class="font-normal text-slate-400">· ~${formatMoeda(prox.valorPrevisto)}</span>` : ''}</p>
+        <p class="text-sm font-medium text-slate-700 dark:text-slate-200">${prox.kmPrevisto.toLocaleString('pt-BR')} km${custoRevisaoHtml(prox, 'text-slate-400')}</p>
         <p class="text-[11px] text-slate-400">Prazo oficial: até ${formatDateBR(prox.dataLimite)}</p>
         ${prox.dataEstimativa ? `<p class="text-[11px] text-slate-400">Estimativa p/ este motorista: ${formatDateBR(prox.dataEstimativa)}</p>` : `<p class="text-[11px] text-slate-400">Estimativa: ainda sem dados suficientes deste motorista</p>`}`;
     }
@@ -1126,7 +1134,7 @@ function renderManutencoes() {
         <p class="mt-2 text-xs text-slate-400">Última revisão</p>
         <p class="text-sm text-slate-700 dark:text-slate-200">${rev.kmRealizado.toLocaleString('pt-BR')} km · ${formatDateBR(rev.dataRealizada)}</p>
         <p class="mt-2 text-xs text-slate-400">Próxima revisão (previsão)</p>
-        <p class="text-sm font-medium ${alerta ? 'text-amber-700 dark:text-amber-400' : 'text-slate-700 dark:text-slate-200'}">${prox.kmPrevisto.toLocaleString('pt-BR')} km${prox.valorPrevisto ? ` <span class="font-normal ${alerta ? '' : 'text-slate-400'}">· ~${formatMoeda(prox.valorPrevisto)}</span>` : ''}</p>
+        <p class="text-sm font-medium ${alerta ? 'text-amber-700 dark:text-amber-400' : 'text-slate-700 dark:text-slate-200'}">${prox.kmPrevisto.toLocaleString('pt-BR')} km${custoRevisaoHtml(prox, alerta ? '' : 'text-slate-400')}</p>
         <p class="text-[11px] text-slate-400">Prazo oficial (último + 1 ano): ${formatDateBR(prox.dataLimite)}</p>
         <p class="text-[11px] ${alerta ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}">${prox.dataEstimativa ? `Estimativa p/ este motorista: ${formatDateBR(prox.dataEstimativa)} (${diasAlerta >= 0 ? `faltam ${diasAlerta} dia(s)` : 'já passou'})` : 'Estimativa: ainda sem dados suficientes deste motorista'}</p>
       </div>`;

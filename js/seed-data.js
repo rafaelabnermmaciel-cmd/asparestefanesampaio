@@ -11,12 +11,14 @@ export const MULTA_ATRASO_DIARIA = 50;
 
 // Tabela oficial de revisões BYD Dolphin, vigente desde 01/09/2026 (peças + mão de obra).
 // Usada para calcular sozinho qual é a próxima revisão de cada carro a partir da última feita.
+// Revisões até 100 mil km são gratuitas (garantia) — "valor" ali é só a referência de tabela,
+// não é cobrado. A partir de 120 mil km o proprietário paga de verdade.
 export const TABELA_REVISAO_BYD = [
-  { km: 60000, valor: 393 },
-  { km: 80000, valor: 1292 },
-  { km: 100000, valor: 758 },
-  { km: 120000, valor: 1292 },
-  { km: 140000, valor: 393 },
+  { km: 60000, valor: 393, gratuita: true },
+  { km: 80000, valor: 1292, gratuita: true },
+  { km: 100000, valor: 758, gratuita: true },
+  { km: 120000, valor: 1292, gratuita: false },
+  { km: 140000, valor: 393, gratuita: false },
 ];
 
 // ---- Veículos ---------------------------------------------------------------------------
@@ -322,5 +324,5 @@ export function calcularProximaRevisao(veiculo, manutencao, locacaoAtiva) {
     }
   }
 
-  return { kmPrevisto, valorPrevisto: marcoProximo.valor, dataLimite, dataEstimativa };
+  return { kmPrevisto, valorPrevisto: marcoProximo.valor, gratuita: marcoProximo.gratuita, dataLimite, dataEstimativa };
 }
