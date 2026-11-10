@@ -84,17 +84,19 @@ function diffDiasISO(a, b) {
   return Math.round((db_ - da) / 86400000);
 }
 
-// Quantas segundas-feiras (dia de pagamento padrão) caem no mês 'AAAA-MM' — usado pra projetar
-// a receita do mês inteiro, não só o que já foi marcado como pago até agora.
-function segundasNoMes(mesAtual) {
+// Datas (ISO) de todas as segundas-feiras (dia de pagamento padrão) do mês 'AAAA-MM' — usado
+// pra projetar a receita do mês inteiro.
+function segundasDoMes(mesAtual) {
   const [ano, mes] = mesAtual.split('-').map(Number);
-  let count = 0;
+  const datas = [];
   const d = new Date(ano, mes - 1, 1);
   while (d.getMonth() === mes - 1) {
-    if (d.getDay() === 1) count++;
+    if (d.getDay() === 1) {
+      datas.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+    }
     d.setDate(d.getDate() + 1);
   }
-  return count;
+  return datas;
 }
 
 function esc(str) {
@@ -272,10 +274,17 @@ function renderPainel() {
     if (v.tipoReceita === 'administracao') {
       receitaMes = loc ? (v.taxaAdministracaoMensal || 0) : 0;
     } else {
-      // Projeta o mês inteiro (nº de segundas × valor semanal), não só o que já foi pago até
-      // agora — consistente com a administração, que já é uma previsão mensal fixa.
+      // Projeta o mês inteiro, uma segunda de cada vez: se já tem pagamento registrado pra
+      // aquela semana, usa o valor real dele (cobre acertos/diárias, tipo a semana de transição
+      // de dia — não entra como se fosse prejuízo só porque é menor que o valor semanal cheio);
+      // senão, assume o valor semanal da locação (já realizado ou ainda por vir).
       const parcelasTotal = fins.reduce((s, f) => s + Number(f.parcela || 0), 0);
-      const receitaSemanalPrevista = loc ? segundasNoMes(mesAtual) * Number(loc.valorSemanal || 0) : 0;
+      const receitaSemanalPrevista = loc
+        ? segundasDoMes(mesAtual).reduce((soma, dataRef) => {
+            const pag = state.pagamentos.find((p) => p.locacaoId === loc.id && p.dataReferencia === dataRef);
+            return soma + Number((pag ? pag.valor : loc.valorSemanal) || 0);
+          }, 0)
+        : 0;
       receitaMes = receitaSemanalPrevista - parcelasTotal - Number(v.protecaoVeicularMensal || 0);
     }
     receitaMesTotal += receitaMes;
@@ -315,7 +324,10 @@ function renderPainel() {
           ${statusChip}
         </div>
         ${loc && !(state.pagamentos.find((p) => p.locacaoId === loc.id && p.dataReferencia === statusSemanaLocacao(loc).dataRef && p.status === 'pago')) ? `
-        <button data-marcar-pago="${loc.id}" data-veiculo="${v.id}" class="mb-3 w-full rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500">Marcar pago (${formatMoeda(loc.valorSemanal)})</button>` : ''}
+        <div class="mb-3 flex gap-2">
+          <button data-marcar-pago="${loc.id}" data-veiculo="${v.id}" class="flex-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500">✓ Pago (${formatMoeda(loc.valorSemanal)})</button>
+          <button data-marcar-naopago="${loc.id}" data-veiculo="${v.id}" class="flex-1 rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20">✗ Não pago</button>
+        </div>` : ''}
         <div class="mb-3">
           <p class="text-xs font-medium uppercase tracking-wide text-slate-400">Próxima revisão</p>
           ${proxRevisaoHtml}
@@ -365,6 +377,27 @@ function renderPainel() {
           observacoes: existente?.observacoes || '',
         }, existente?.id);
         toast('Pagamento marcado como pago.');
+      } catch (e) { toast(e.message); }
+    });
+  });
+
+  container.querySelectorAll('[data-marcar-naopago]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const loc = state.locacoes.find((l) => l.id === btn.dataset.marcarNaopago);
+      const v = veiculoPorId(btn.dataset.veiculo);
+      const dataRef = dataOcorrenciaRecente(loc.diaPagamento);
+      const existente = state.pagamentos.find((p) => p.locacaoId === loc.id && p.dataReferencia === dataRef);
+      try {
+        await salvarPagamento({
+          veiculoId: v.id,
+          locacaoId: loc.id,
+          dataReferencia: dataRef,
+          valor: loc.valorSemanal,
+          status: 'atrasado',
+          dataPagamentoReal: '',
+          observacoes: existente?.observacoes || '',
+        }, existente?.id);
+        toast('Marcado como não pago (atrasado).');
       } catch (e) { toast(e.message); }
     });
   });
@@ -627,6 +660,7 @@ function renderLocacoes() {
               <td class="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">${l.caucaoValor ? formatMoeda(l.caucaoValor) : '—'} ${l.caucaoStatus ? `(${l.caucaoStatus})` : ''}</td>
               <td class="px-4 py-3"><span class="badge ${STATUS_LOCACAO[l.status]?.cor || ''}">${STATUS_LOCACAO[l.status]?.label || l.status}</span></td>
               <td class="px-4 py-3 text-right whitespace-nowrap">
+                ${l.observacoes ? `<span title="${esc(l.observacoes)}" class="mr-2 cursor-help text-slate-400" aria-label="Tem observações">📝</span>` : ''}
                 <button data-editar-locacao="${l.id}" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Editar</button>
                 ${l.status === 'ativa' ? `<button data-encerrar-locacao="${l.id}" class="ml-3 text-xs font-medium text-rose-600 hover:underline dark:text-rose-400">Encerrar</button>` : ''}
               </td>
@@ -703,6 +737,9 @@ function abrirModalLocacao(locacao = null) {
           <option value="encerrada" ${locacao?.status === 'encerrada' ? 'selected' : ''}>Encerrada</option>
         </select>
       </label>
+      <label class="block text-xs text-slate-500 dark:text-slate-400">Observações <span class="text-slate-300">(acertos, diárias em aberto, descontos na caução, etc.)</span>
+        <textarea name="observacoes" rows="3" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900">${esc(locacao?.observacoes || '')}</textarea>
+      </label>
       <div class="flex justify-end gap-2 pt-2">
         <button type="button" id="btn-cancelar" class="rounded-xl px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Cancelar</button>
         <button type="submit" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">Salvar</button>
@@ -726,6 +763,7 @@ function abrirModalLocacao(locacao = null) {
       caucaoValor: fd.get('caucaoValor') ? Number(fd.get('caucaoValor')) : null,
       caucaoStatus: fd.get('caucaoStatus'),
       status: fd.get('status'),
+      observacoes: fd.get('observacoes') || '',
     };
     try {
       await salvarLocacao(dados, locacao?.id);
