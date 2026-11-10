@@ -24,6 +24,8 @@ import {
   ouvirAcessosPendentes,
   aprovarAcesso,
   recusarAcesso,
+  enviarDocumento,
+  excluirDocumento,
 } from './firestore.js';
 import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js';
 
@@ -499,7 +501,7 @@ function renderVeiculos() {
         <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div class="mb-2 flex items-start justify-between gap-2">
             <div>
-              <p class="text-sm font-semibold text-slate-900 dark:text-white">${esc(v.placa)}</p>
+              <p class="text-sm font-semibold text-slate-900 dark:text-white">${esc(v.placa)}${v.documentoUrl ? ` <a href="${esc(v.documentoUrl)}" target="_blank" rel="noopener" title="Ver documento do veículo" class="text-indigo-500">📄</a>` : ''}</p>
               <p class="text-xs text-slate-400">${esc(v.modelo)} · ${esc(v.cor || '—')}</p>
             </div>
             <span class="badge ${TIPO_RECEITA_LABEL[v.tipoReceita]?.cor || ''}">${TIPO_RECEITA_LABEL[v.tipoReceita]?.label || v.tipoReceita}</span>
@@ -526,7 +528,7 @@ function renderVeiculos() {
         <tbody>
           ${lista.length ? lista.map((v) => `
             <tr class="border-b border-slate-50 last:border-0 dark:border-slate-800/60">
-              <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">${esc(v.placa)}</td>
+              <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">${esc(v.placa)}${v.documentoUrl ? ` <a href="${esc(v.documentoUrl)}" target="_blank" rel="noopener" title="Ver documento do veículo" class="text-indigo-500">📄</a>` : ''}</td>
               <td class="px-4 py-3 text-slate-500 dark:text-slate-400">${esc(v.modelo)} · ${esc(v.cor || '—')}</td>
               <td class="px-4 py-3 text-slate-500 dark:text-slate-400">${esc(v.proprietarioNome)}</td>
               <td class="px-4 py-3"><span class="badge ${TIPO_RECEITA_LABEL[v.tipoReceita]?.cor || ''}">${TIPO_RECEITA_LABEL[v.tipoReceita]?.label || v.tipoReceita}</span></td>
@@ -625,6 +627,10 @@ function abrirModalVeiculo(veiculo = null) {
           <option value="inativo" ${veiculo?.status === 'inativo' ? 'selected' : ''}>Inativo (vendido/parado)</option>
         </select>
       </label>
+      <label class="block text-xs text-slate-500 dark:text-slate-400">Documento do veículo <span class="text-slate-300">(CRLV, etc. — PDF ou imagem)</span>
+        ${veiculo?.documentoUrl ? `<p class="mt-1 text-xs"><a href="${esc(veiculo.documentoUrl)}" target="_blank" rel="noopener" class="font-medium text-indigo-600 hover:underline dark:text-indigo-400">📄 ${esc(veiculo.documentoNome || 'Ver documento atual')}</a> <button type="button" id="btn-remover-documento" class="ml-2 text-rose-600 hover:underline dark:text-rose-400">remover</button></p>` : ''}
+        <input type="file" name="documento" accept=".pdf,image/*" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+      </label>
       <div class="flex justify-end gap-2 pt-2">
         <button type="button" id="btn-cancelar" class="rounded-xl px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Cancelar</button>
         <button type="submit" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">Salvar</button>
@@ -634,9 +640,16 @@ function abrirModalVeiculo(veiculo = null) {
   abrirModal(html);
   qs('#btn-cancelar').addEventListener('click', fecharModal);
   qs('#select-tipo-receita').addEventListener('change', (e) => qs('#campo-taxa-admin').classList.toggle('hidden', e.target.value !== 'administracao'));
+  let documentoRemovido = false;
+  qs('#btn-remover-documento')?.addEventListener('click', (e) => {
+    documentoRemovido = true;
+    e.target.closest('p').remove();
+  });
   qs('#form-veiculo').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
+    const botao = e.target.querySelector('button[type=submit]');
+    botao.disabled = true;
     const dados = {
       placa: fd.get('placa').trim().toUpperCase(),
       cor: fd.get('cor') || '',
@@ -655,10 +668,23 @@ function abrirModalVeiculo(veiculo = null) {
       status: fd.get('status'),
     };
     try {
+      const arquivo = fd.get('documento');
+      if (arquivo && arquivo.size > 0) {
+        if (veiculo?.documentoCaminho) await excluirDocumento(veiculo.documentoCaminho);
+        const { url, caminho, nome } = await enviarDocumento(`veiculos/${veiculo?.id || fd.get('placa')}`, arquivo);
+        dados.documentoUrl = url;
+        dados.documentoCaminho = caminho;
+        dados.documentoNome = nome;
+      } else if (documentoRemovido && veiculo?.documentoCaminho) {
+        await excluirDocumento(veiculo.documentoCaminho);
+        dados.documentoUrl = null;
+        dados.documentoCaminho = null;
+        dados.documentoNome = null;
+      }
       await salvarVeiculo(dados, veiculo?.id);
       toast('Veículo salvo.');
       fecharModal();
-    } catch (err) { toast(err.message); }
+    } catch (err) { botao.disabled = false; toast(err.message); }
   });
 }
 
@@ -760,7 +786,7 @@ function renderLocacoes() {
         <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div class="mb-2 flex items-start justify-between gap-2">
             <div>
-              <p class="text-sm font-semibold text-slate-900 dark:text-white">${esc(l.locatarioNome)}</p>
+              <p class="text-sm font-semibold text-slate-900 dark:text-white">${esc(l.locatarioNome)}${l.contratoUrl ? ` <a href="${esc(l.contratoUrl)}" target="_blank" rel="noopener" title="Ver contrato assinado" class="text-indigo-500">📄</a>` : ''}</p>
               <p class="text-xs text-slate-400">${esc(v?.placa || '—')}</p>
             </div>
             <span class="badge ${STATUS_LOCACAO[l.status]?.cor || ''}">${STATUS_LOCACAO[l.status]?.label || l.status}</span>
@@ -797,7 +823,7 @@ function renderLocacoes() {
             return `
             <tr class="border-b border-slate-50 last:border-0 dark:border-slate-800/60">
               <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">${esc(v?.placa || '—')}</td>
-              <td class="px-4 py-3">${esc(l.locatarioNome)}</td>
+              <td class="px-4 py-3">${esc(l.locatarioNome)}${l.contratoUrl ? ` <a href="${esc(l.contratoUrl)}" target="_blank" rel="noopener" title="Ver contrato assinado" class="text-indigo-500">📄</a>` : ''}</td>
               <td class="px-4 py-3 whitespace-nowrap">${formatDateBR(l.dataRetirada)}</td>
               <td class="px-4 py-3 whitespace-nowrap">${formatDateBR(l.dataFim)}</td>
               <td class="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">${formatMoeda(l.valorSemanal)} · ${DIAS_SEMANA_LABEL[l.diaPagamento] || l.diaPagamento}</td>
@@ -893,6 +919,10 @@ function abrirModalLocacao(locacao = null) {
       <label class="block text-xs text-slate-500 dark:text-slate-400">Observações <span class="text-slate-300">(acertos, diárias em aberto, descontos na caução, etc.)</span>
         <textarea name="observacoes" rows="3" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900">${esc(locacao?.observacoes || '')}</textarea>
       </label>
+      <label class="block text-xs text-slate-500 dark:text-slate-400">Contrato assinado <span class="text-slate-300">(PDF ou imagem)</span>
+        ${locacao?.contratoUrl ? `<p class="mt-1 text-xs"><a href="${esc(locacao.contratoUrl)}" target="_blank" rel="noopener" class="font-medium text-indigo-600 hover:underline dark:text-indigo-400">📄 ${esc(locacao.contratoNome || 'Ver contrato atual')}</a> <button type="button" id="btn-remover-contrato" class="ml-2 text-rose-600 hover:underline dark:text-rose-400">remover</button></p>` : ''}
+        <input type="file" name="contrato" accept=".pdf,image/*" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+      </label>
       <div class="flex justify-end gap-2 pt-2">
         <button type="button" id="btn-cancelar" class="rounded-xl px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Cancelar</button>
         <button type="submit" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">Salvar</button>
@@ -901,9 +931,16 @@ function abrirModalLocacao(locacao = null) {
   `;
   abrirModal(html);
   qs('#btn-cancelar').addEventListener('click', fecharModal);
+  let contratoRemovido = false;
+  qs('#btn-remover-contrato')?.addEventListener('click', (e) => {
+    contratoRemovido = true;
+    e.target.closest('p').remove();
+  });
   qs('#form-locacao').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
+    const botao = e.target.querySelector('button[type=submit]');
+    botao.disabled = true;
     const dados = {
       veiculoId: fd.get('veiculoId'),
       locatarioNome: fd.get('locatarioNome').trim(),
@@ -920,10 +957,23 @@ function abrirModalLocacao(locacao = null) {
       observacoes: fd.get('observacoes') || '',
     };
     try {
+      const arquivo = fd.get('contrato');
+      if (arquivo && arquivo.size > 0) {
+        if (locacao?.contratoCaminho) await excluirDocumento(locacao.contratoCaminho);
+        const { url, caminho, nome } = await enviarDocumento(`locacoes/${locacao?.id || Date.now()}`, arquivo);
+        dados.contratoUrl = url;
+        dados.contratoCaminho = caminho;
+        dados.contratoNome = nome;
+      } else if (contratoRemovido && locacao?.contratoCaminho) {
+        await excluirDocumento(locacao.contratoCaminho);
+        dados.contratoUrl = null;
+        dados.contratoCaminho = null;
+        dados.contratoNome = null;
+      }
       await salvarLocacao(dados, locacao?.id);
       toast('Locação salva.');
       fecharModal();
-    } catch (err) { toast(err.message); }
+    } catch (err) { botao.disabled = false; toast(err.message); }
   });
 }
 

@@ -22,6 +22,13 @@ import {
   signOut,
   createUserWithEmailAndPassword,
 } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
+import {
+  getStorage,
+  ref as storageRef,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject,
+} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js';
 import { firebaseConfig } from './firebase-config.js';
 import { VEICULOS_SEED, FINANCIAMENTOS_SEED, LOCACOES_SEED, MANUTENCOES_SEED } from './seed-data.js';
 
@@ -29,10 +36,12 @@ export const firebaseConfigurado = !Object.values(firebaseConfig).some((v) => St
 
 let db = null;
 let auth = null;
+let storage = null;
 if (firebaseConfigurado) {
   const app = initializeApp(firebaseConfig);
   db = getFirestore(app);
   auth = getAuth(app);
+  storage = getStorage(app);
 }
 
 // ---- Login (acesso restrito dos proprietários — opcional pro administrador) ----------------
@@ -227,4 +236,27 @@ export async function frotaJaCarregada() {
   checarDb();
   const snap = await getDocs(collection(db, COL.veiculos));
   return !snap.empty;
+}
+
+// ---- Documentos (contrato assinado de cada locação, documento de cada veículo) -------------
+// Guardados no Firebase Storage; o Firestore só guarda a URL, o nome original e o caminho (pra
+// poder apagar o arquivo antigo quando um novo é enviado ou quando o item é excluído).
+
+export async function enviarDocumento(pasta, arquivo) {
+  checarDb();
+  const caminho = `${pasta}/${Date.now()}-${arquivo.name}`;
+  const ref = storageRef(storage, caminho);
+  await uploadBytes(ref, arquivo);
+  const url = await getDownloadURL(ref);
+  return { url, caminho, nome: arquivo.name };
+}
+
+export async function excluirDocumento(caminho) {
+  checarDb();
+  if (!caminho) return;
+  try {
+    await deleteObject(storageRef(storage, caminho));
+  } catch (e) {
+    // já pode ter sido removido antes — não trava o fluxo por isso
+  }
 }
