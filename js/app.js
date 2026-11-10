@@ -308,10 +308,8 @@ function renderPainel() {
       const diasData = diffDiasISO(hoje, prox.dataPrevista);
       if (diasData <= 30) revisoesProximas++;
       proxRevisaoHtml = `
-        <p class="text-xs text-slate-500 dark:text-slate-400">
-          ${prox.kmPrevisto ? `${prox.kmPrevisto.toLocaleString('pt-BR')} km` : '—'} ou ${formatDateBR(prox.dataPrevista)} <span class="text-slate-400">(o que vier primeiro)</span>
-        </p>
-        <p class="text-[11px] text-slate-400">${diasData >= 0 ? `faltam ${diasData} dia(s) pela data` : 'data já passou — confira o km'}${prox.valorPrevisto ? ` · ~${formatMoeda(prox.valorPrevisto)}` : ''}</p>`;
+        <p class="text-sm font-medium text-slate-700 dark:text-slate-200">${prox.kmPrevisto.toLocaleString('pt-BR')} km${prox.valorPrevisto ? ` <span class="font-normal text-slate-400">· ~${formatMoeda(prox.valorPrevisto)}</span>` : ''}</p>
+        <p class="text-[11px] text-slate-400">ou no máximo até ${formatDateBR(prox.dataPrevista)} (estimativa pela média de uso)</p>`;
     }
 
     return `
@@ -523,6 +521,14 @@ function abrirModalVeiculo(veiculo = null) {
           <input type="number" name="kmInicial" value="${veiculo?.kmInicial ?? ''}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
         </label>
       </div>
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label class="text-xs text-slate-500 dark:text-slate-400">Km atual <span class="text-slate-300">(leitura mais recente, opcional)</span>
+          <input type="number" name="kmAtual" value="${veiculo?.kmAtual ?? ''}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+        </label>
+        <label class="text-xs text-slate-500 dark:text-slate-400">Data dessa leitura
+          <input type="date" name="dataLeituraAtual" value="${esc(veiculo?.dataLeituraAtual || '')}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+        </label>
+      </div>
       <label class="block text-xs text-slate-500 dark:text-slate-400">Status
         <select name="status" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900">
           <option value="ativo" ${(veiculo?.status || 'ativo') === 'ativo' ? 'selected' : ''}>Ativo</option>
@@ -554,6 +560,8 @@ function abrirModalVeiculo(veiculo = null) {
       protecaoVeicularMensal: Number(fd.get('protecaoVeicularMensal') || 0),
       dataInicioOperacao: fd.get('dataInicioOperacao') || '',
       kmInicial: fd.get('kmInicial') ? Number(fd.get('kmInicial')) : null,
+      kmAtual: fd.get('kmAtual') ? Number(fd.get('kmAtual')) : null,
+      dataLeituraAtual: fd.get('dataLeituraAtual') || '',
       status: fd.get('status'),
     };
     try {
@@ -972,9 +980,9 @@ function renderManutencoes() {
         <p class="text-sm font-semibold text-slate-900 dark:text-white">${esc(v.placa)} <span class="font-normal text-slate-400">· ${esc(v.modelo)}</span></p>
         <p class="mt-2 text-xs text-slate-400">Última revisão</p>
         <p class="text-sm text-slate-700 dark:text-slate-200">${rev.kmRealizado.toLocaleString('pt-BR')} km · ${formatDateBR(rev.dataRealizada)}</p>
-        <p class="mt-2 text-xs text-slate-400">Próxima (o que vier primeiro)</p>
-        <p class="text-sm font-medium ${alerta ? 'text-amber-700 dark:text-amber-400' : 'text-slate-700 dark:text-slate-200'}">${prox.kmPrevisto ? `${prox.kmPrevisto.toLocaleString('pt-BR')} km` : '—'} ou ${formatDateBR(prox.dataPrevista)}</p>
-        <p class="text-[11px] text-slate-400">${diasData >= 0 ? `faltam ${diasData} dia(s)` : 'prazo já passou — confira o km'}${prox.valorPrevisto ? ` · ~${formatMoeda(prox.valorPrevisto)}` : ''}</p>
+        <p class="mt-2 text-xs text-slate-400">Previsão de revisão</p>
+        <p class="text-sm font-medium ${alerta ? 'text-amber-700 dark:text-amber-400' : 'text-slate-700 dark:text-slate-200'}">${prox.kmPrevisto.toLocaleString('pt-BR')} km${prox.valorPrevisto ? ` <span class="font-normal ${alerta ? '' : 'text-slate-400'}">· ~${formatMoeda(prox.valorPrevisto)}</span>` : ''}</p>
+        <p class="text-[11px] text-slate-400">ou no máximo até ${formatDateBR(prox.dataPrevista)} (estimativa pela média de uso, ${diasData >= 0 ? `faltam ${diasData} dia(s)` : 'já passou'})</p>
       </div>`;
   }).join('');
 
