@@ -271,21 +271,28 @@ function renderPainel() {
     const prox = rev ? calcularProximaRevisao(v, rev) : null;
 
     let receitaMes = 0;
+    let detalheReceita = null;
     if (v.tipoReceita === 'administracao') {
       receitaMes = loc ? (v.taxaAdministracaoMensal || 0) : 0;
     } else {
-      // Projeta o mês inteiro, uma segunda de cada vez: se já tem pagamento registrado pra
-      // aquela semana, usa o valor real dele (cobre acertos/diárias, tipo a semana de transição
-      // de dia — não entra como se fosse prejuízo só porque é menor que o valor semanal cheio);
-      // senão, assume o valor semanal da locação (já realizado ou ainda por vir).
+      // Aluguel previsto do mês = soma de todo pagamento já registrado pra essa locação nesse mês
+      // (cobre qualquer dia da semana — ex: o último pagamento do esquema antigo, antes de uma
+      // troca de dia de pagamento) + uma projeção pro valor cheio em cada segunda ainda sem
+      // pagamento registrado. Uma segunda sem registro só entra na projeção se for recente (até
+      // 7 dias atrás) ou futura — uma segunda bem antiga sem registro normalmente é porque, antes
+      // da troca de dia de pagamento, aquele dia nem era o dia de cobrança (não é uma semana
+      // perdida, é só uma data que nunca existiu de verdade).
       const parcelasTotal = fins.reduce((s, f) => s + Number(f.parcela || 0), 0);
-      const receitaSemanalPrevista = loc
-        ? segundasDoMes(mesAtual).reduce((soma, dataRef) => {
-            const pag = state.pagamentos.find((p) => p.locacaoId === loc.id && p.dataReferencia === dataRef);
-            return soma + Number((pag ? pag.valor : loc.valorSemanal) || 0);
-          }, 0)
-        : 0;
-      receitaMes = receitaSemanalPrevista - parcelasTotal - Number(v.protecaoVeicularMensal || 0);
+      let alugueis = 0;
+      if (loc) {
+        const pagamentosDoMes = state.pagamentos.filter((p) => p.locacaoId === loc.id && (p.dataReferencia || '').startsWith(mesAtual));
+        const datasRegistradas = new Set(pagamentosDoMes.map((p) => p.dataReferencia));
+        const somaRegistrada = pagamentosDoMes.reduce((s, p) => s + Number(p.valor || 0), 0);
+        const segundasProjetadas = segundasDoMes(mesAtual).filter((d) => !datasRegistradas.has(d) && diffDiasISO(d, hoje) <= 7);
+        alugueis = somaRegistrada + segundasProjetadas.length * Number(loc.valorSemanal || 0);
+      }
+      receitaMes = alugueis - parcelasTotal - Number(v.protecaoVeicularMensal || 0);
+      detalheReceita = { alugueis, parcelasTotal, protecao: Number(v.protecaoVeicularMensal || 0) };
     }
     receitaMesTotal += receitaMes;
 
@@ -332,9 +339,17 @@ function renderPainel() {
           <p class="text-xs font-medium uppercase tracking-wide text-slate-400">Próxima revisão</p>
           ${proxRevisaoHtml}
         </div>
-        <div class="flex items-center justify-between border-t border-slate-100 pt-3 dark:border-slate-800">
-          <p class="text-xs text-slate-400">Lucro previsto do mês (${mesAtual.split('-').reverse().join('/')})</p>
-          <p class="text-sm font-semibold ${receitaMes >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">${formatMoeda(receitaMes)}</p>
+        <div class="border-t border-slate-100 pt-3 dark:border-slate-800">
+          <div class="flex items-center justify-between">
+            <p class="text-xs text-slate-400">Lucro previsto do mês (${mesAtual.split('-').reverse().join('/')})</p>
+            <p class="text-sm font-semibold ${receitaMes >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">${formatMoeda(receitaMes)}</p>
+          </div>
+          ${detalheReceita ? `
+          <div class="mt-1.5 space-y-0.5 text-[11px] text-slate-400">
+            <div class="flex justify-between"><span>Aluguel</span><span>${formatMoeda(detalheReceita.alugueis)}</span></div>
+            ${detalheReceita.parcelasTotal ? `<div class="flex justify-between"><span>Financiamento</span><span>-${formatMoeda(detalheReceita.parcelasTotal)}</span></div>` : ''}
+            ${detalheReceita.protecao ? `<div class="flex justify-between"><span>Proteção veicular</span><span>-${formatMoeda(detalheReceita.protecao)}</span></div>` : ''}
+          </div>` : ''}
         </div>
       </div>`;
   }).join('');
@@ -342,7 +357,7 @@ function renderPainel() {
   container.innerHTML = `
     <div class="grid gap-4 sm:grid-cols-3">
       <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <p class="text-xs font-medium uppercase tracking-wide text-slate-400">Renda prevista do mês</p>
+        <p class="text-xs font-medium uppercase tracking-wide text-slate-400">Lucro previsto do mês (líquido)</p>
         <p class="mt-2 text-3xl font-semibold text-indigo-600 dark:text-indigo-400">${formatMoeda(receitaMesTotal)}</p>
       </div>
       <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
