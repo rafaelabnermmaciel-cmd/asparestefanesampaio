@@ -44,8 +44,19 @@ const state = {
   acessosPendentes: [],
 };
 
+// O link normal (index.html) exige login de todo mundo. O administrador (Rafael) acessa pelo
+// link com ?admin=1 uma vez — o dispositivo lembra disso (localStorage) e passa a abrir direto
+// com acesso total, sem precisar logar, nas próximas vezes.
+function dispositivoAdmin() {
+  try { return localStorage.getItem('rm-veiculos-admin') === '1'; } catch (e) { return false; }
+}
+
 function souAdmin() {
-  return !state.auth.uid || state.auth.perfil?.tipo !== 'proprietario';
+  return dispositivoAdmin() || (!!state.auth.uid && state.auth.perfil?.tipo !== 'proprietario');
+}
+
+function precisaGateLogin() {
+  return !dispositivoAdmin() && !state.auth.uid;
 }
 
 function aguardandoAprovacao() {
@@ -1578,6 +1589,117 @@ function abrirModalConta() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Portão de acesso (tela cheia de login/cadastro pra quem abre o link sem ser o administrador)
+// ---------------------------------------------------------------------------------------------
+
+function htmlGateLogin() {
+  return `
+    <h2 class="mb-1 text-lg font-semibold text-slate-900 dark:text-white">Entrar</h2>
+    <p class="mb-4 text-xs text-slate-400">Entre com o e-mail e senha do seu veículo.</p>
+    <form id="gate-form-login" class="space-y-3">
+      <label class="block text-xs text-slate-500 dark:text-slate-400">E-mail
+        <input required type="email" name="email" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+      </label>
+      <label class="block text-xs text-slate-500 dark:text-slate-400">Senha
+        <input required type="password" name="senha" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+      </label>
+      <div class="pt-1">
+        <button type="button" id="gate-ir-cadastro" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Ainda não tenho conta</button>
+      </div>
+      <button type="submit" class="mt-1 w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">Entrar</button>
+    </form>
+  `;
+}
+
+function htmlGateCadastro() {
+  return `
+    <h2 class="mb-1 text-lg font-semibold text-slate-900 dark:text-white">Criar conta de proprietário</h2>
+    <p class="mb-4 text-xs text-slate-400">Informe a placa do seu veículo — ela é usada pra achar seus dados. Seu acesso fica pendente até o administrador aprovar.</p>
+    <form id="gate-form-cadastro" class="space-y-3">
+      <label class="block text-xs text-slate-500 dark:text-slate-400">Placa do veículo
+        <input required name="placa" placeholder="ABC1D23" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm uppercase dark:border-slate-800 dark:bg-slate-900" />
+      </label>
+      <label class="block text-xs text-slate-500 dark:text-slate-400">E-mail
+        <input required type="email" name="email" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+      </label>
+      <label class="block text-xs text-slate-500 dark:text-slate-400">Senha
+        <input required type="password" name="senha" minlength="6" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+      </label>
+      <div class="pt-1">
+        <button type="button" id="gate-ir-login" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Já tenho conta</button>
+      </div>
+      <button type="submit" class="mt-1 w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">Criar conta</button>
+    </form>
+  `;
+}
+
+function wireGateLogin() {
+  qs('#gate-ir-cadastro').addEventListener('click', () => {
+    qs('#gate-login-box').innerHTML = htmlGateCadastro();
+    wireGateCadastro();
+  });
+  qs('#gate-form-login').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const botao = e.target.querySelector('button[type=submit]');
+    botao.disabled = true;
+    try {
+      await fazerLogin(fd.get('email').trim(), fd.get('senha'));
+    } catch (err) {
+      botao.disabled = false;
+      toast('E-mail ou senha incorretos.');
+    }
+  });
+}
+
+function wireGateCadastro() {
+  qs('#gate-ir-login').addEventListener('click', () => {
+    qs('#gate-login-box').innerHTML = htmlGateLogin();
+    wireGateLogin();
+  });
+  qs('#gate-form-cadastro').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const botao = e.target.querySelector('button[type=submit]');
+    botao.disabled = true;
+    try {
+      await cadastrarProprietario(fd.get('email').trim(), fd.get('senha'), fd.get('placa'));
+      toast('Conta criada! Aguarde a aprovação do administrador.');
+    } catch (err) {
+      botao.disabled = false;
+      if (String(err.code || err.message).includes('email-already-in-use')) {
+        toast('Esse e-mail já está cadastrado.');
+      } else if (String(err.code || err.message).includes('weak-password')) {
+        toast('Senha muito curta — use pelo menos 6 caracteres.');
+      } else {
+        toast(err.message);
+      }
+    }
+  });
+}
+
+function renderGateLogin() {
+  qs('#gate-login-box').innerHTML = htmlGateLogin();
+  wireGateLogin();
+}
+
+function mostrarGateLogin() {
+  qs('#app-shell').classList.add('hidden');
+  qs('#nav-mobile').classList.add('hidden');
+  qs('#gate-login').classList.remove('hidden');
+  qs('#gate-login').classList.add('flex');
+  renderGateLogin();
+}
+
+function esconderGateLogin() {
+  qs('#gate-login').classList.add('hidden');
+  qs('#gate-login').classList.remove('flex');
+  qs('#gate-login-box').innerHTML = '';
+  qs('#app-shell').classList.remove('hidden');
+  qs('#nav-mobile').classList.remove('hidden');
+}
+
+// ---------------------------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------------------------
 
@@ -1601,6 +1723,12 @@ function iniciarOuvintesConformeAuth() {
   state.pagamentos = [];
   state.manutencoes = [];
   state.relatorioVeiculoId = '';
+
+  if (precisaGateLogin()) {
+    mostrarGateLogin();
+    return;
+  }
+  esconderGateLogin();
 
   if (state.auth.perfil?.tipo === 'proprietario') {
     if (state.auth.perfil.status === 'aprovado') {
@@ -1628,6 +1756,17 @@ let pararOuvirPerfil = null;
 
 function init() {
   initTema();
+
+  // Link do administrador (abrir uma vez com ?admin=1): fica lembrado neste navegador/aparelho,
+  // dando acesso total sem precisar logar nas próximas vezes. Quem abre o link normal sem isso
+  // cai no portão de login.
+  try {
+    if (new URLSearchParams(location.search).get('admin') === '1') {
+      localStorage.setItem('rm-veiculos-admin', '1');
+      history.replaceState(null, '', location.pathname + location.hash);
+    }
+  } catch (e) { /* localStorage indisponível — segue sem lembrar */ }
+
   qs('#btn-conta').addEventListener('click', () => abrirModalConta());
 
   if (!firebaseConfigurado) {
@@ -1639,11 +1778,13 @@ function init() {
 
   window.addEventListener('hashchange', () => irParaPagina(location.hash.slice(1)));
 
-  // Sempre ativo (mesmo sem login), pra avisar o administrador de cadastros novos à espera.
-  ouvirAcessosPendentes((lista) => {
-    state.acessosPendentes = lista;
-    atualizarBotaoConta();
-  });
+  if (dispositivoAdmin()) {
+    // Sempre ativo (mesmo sem login), pra avisar o administrador de cadastros novos à espera.
+    ouvirAcessosPendentes((lista) => {
+      state.acessosPendentes = lista;
+      atualizarBotaoConta();
+    });
+  }
 
   observarAuth((user) => {
     if (pararOuvirPerfil) { pararOuvirPerfil(); pararOuvirPerfil = null; }
