@@ -1369,71 +1369,139 @@ function renderRelatorio() {
   });
 
   container.innerHTML = `
-    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <p class="text-xs text-slate-400">Veículo</p>
-        <p class="text-sm font-semibold text-slate-900 dark:text-white">${esc(v.placa)} <span class="font-normal text-slate-400">· ${esc(v.proprietarioNome)}</span></p>
+    <div class="print:hidden">
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div></div>
+        <div class="flex items-center gap-3">
+          ${souAdmin() ? `<button id="btn-trocar-veiculo-relatorio" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">← Escolher outro veículo</button>` : ''}
+          <button id="btn-gerar-pdf" class="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">
+            <i data-lucide="file-down" class="h-4 w-4"></i> Gerar PDF
+          </button>
+        </div>
       </div>
-      <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <p class="text-xs text-slate-400">Aluguel recebido (total)</p>
-        <p class="text-lg font-semibold text-slate-900 dark:text-white">${formatMoeda(totAluguel)}</p>
-      </div>
-      <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <p class="text-xs text-slate-400">Gastos (${ehAdministracao ? 'administração + manutenção + proteção' : 'financiamento + manutenção + proteção'})</p>
-        <p class="text-lg font-semibold text-rose-600 dark:text-rose-400">-${formatMoeda(totAdmin + totManut + totParcela + totProtecao)}</p>
-      </div>
-      <div class="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm dark:border-indigo-900 dark:bg-indigo-500/10">
-        <p class="text-xs text-indigo-600 dark:text-indigo-400">Líquido desde o início</p>
-        <p class="text-lg font-semibold text-indigo-700 dark:text-indigo-300">${formatMoeda(totLiquido)}</p>
-      </div>
-    </div>
-    <p class="text-[11px] text-slate-400">Desde ${formatDateBR(inicio)} (início da operação deste veículo). Semana sem pagamento lançado no app conta pelo valor combinado em contrato; mês sem locatário não conta aluguel nem ${ehAdministracao ? 'administração' : 'parcela'}.</p>
 
-    <div class="space-y-2 sm:hidden">
-      ${linhas.map((l) => `
-        <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div class="flex items-center justify-between">
-            <p class="text-sm font-medium text-slate-800 dark:text-slate-100">${nomeMes(l.mes)}</p>
-            <p class="text-sm font-semibold ${l.liquido >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">${formatMoeda(l.liquido)}</p>
-          </div>
-          <p class="mt-1 text-[11px] text-slate-400">Aluguel ${formatMoeda(l.aluguel)}${l.administracao ? ` · Admin. -${formatMoeda(l.administracao)}` : ''}${l.parcela ? ` · Financ. -${formatMoeda(l.parcela)}` : ''}${l.manutencao ? ` · Manut. -${formatMoeda(l.manutencao)}` : ''} · Proteção -${formatMoeda(l.protecao)}</p>
-        </div>`).join('')}
+      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <p class="text-xs text-slate-400">Veículo</p>
+          <p class="text-sm font-semibold text-slate-900 dark:text-white">${esc(v.placa)} <span class="font-normal text-slate-400">· ${esc(v.proprietarioNome)}</span></p>
+        </div>
+        <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <p class="text-xs text-slate-400">Aluguel recebido (total)</p>
+          <p class="text-lg font-semibold text-slate-900 dark:text-white">${formatMoeda(totAluguel)}</p>
+        </div>
+        <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <p class="text-xs text-slate-400">Gastos (${ehAdministracao ? 'administração + manutenção + proteção' : 'financiamento + manutenção + proteção'})</p>
+          <p class="text-lg font-semibold text-rose-600 dark:text-rose-400">-${formatMoeda(totAdmin + totManut + totParcela + totProtecao)}</p>
+        </div>
+        <div class="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm dark:border-indigo-900 dark:bg-indigo-500/10">
+          <p class="text-xs text-indigo-600 dark:text-indigo-400">Líquido desde o início</p>
+          <p class="text-lg font-semibold text-indigo-700 dark:text-indigo-300">${formatMoeda(totLiquido)}</p>
+        </div>
+      </div>
+      <p class="mt-2 text-[11px] text-slate-400">Desde ${formatDateBR(inicio)} (início da operação deste veículo). Semana sem pagamento lançado no app conta pelo valor combinado em contrato; mês sem locatário não conta aluguel nem ${ehAdministracao ? 'administração' : 'parcela'}.</p>
+
+      <div class="mt-4 space-y-2 sm:hidden">
+        ${linhas.map((l) => `
+          <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div class="flex items-center justify-between">
+              <p class="text-sm font-medium text-slate-800 dark:text-slate-100">${nomeMes(l.mes)}</p>
+              <p class="text-sm font-semibold ${l.liquido >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">${formatMoeda(l.liquido)}</p>
+            </div>
+            <p class="mt-1 text-[11px] text-slate-400">Aluguel ${formatMoeda(l.aluguel)}${l.administracao ? ` · Admin. -${formatMoeda(l.administracao)}` : ''}${l.parcela ? ` · Financ. -${formatMoeda(l.parcela)}` : ''}${l.manutencao ? ` · Manut. -${formatMoeda(l.manutencao)}` : ''} · Proteção -${formatMoeda(l.protecao)}</p>
+          </div>`).join('')}
+      </div>
+      <div class="mt-4 hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm sm:block dark:border-slate-800 dark:bg-slate-900">
+        <table class="w-full text-left text-sm">
+          <thead class="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400 dark:border-slate-800">
+            <tr>
+              <th class="px-4 py-3">Mês</th><th class="px-4 py-3">Aluguel</th>
+              <th class="px-4 py-3">${ehAdministracao ? 'Administração' : 'Financiamento'}</th>
+              <th class="px-4 py-3">Manutenção</th><th class="px-4 py-3">Proteção</th><th class="px-4 py-3">Líquido</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${linhas.map((l) => `
+              <tr class="border-b border-slate-50 last:border-0 dark:border-slate-800/60">
+                <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">${nomeMes(l.mes)}</td>
+                <td class="px-4 py-3">${formatMoeda(l.aluguel)}</td>
+                <td class="px-4 py-3 text-slate-500 dark:text-slate-400">${formatMoeda(ehAdministracao ? l.administracao : l.parcela)}</td>
+                <td class="px-4 py-3 text-slate-500 dark:text-slate-400">${formatMoeda(l.manutencao)}</td>
+                <td class="px-4 py-3 text-slate-500 dark:text-slate-400">${formatMoeda(l.protecao)}</td>
+                <td class="px-4 py-3 font-semibold ${l.liquido >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">${formatMoeda(l.liquido)}</td>
+              </tr>`).join('')}
+          </tbody>
+          <tfoot>
+            <tr class="border-t border-slate-200 font-semibold dark:border-slate-700">
+              <td class="px-4 py-3">Total</td>
+              <td class="px-4 py-3">${formatMoeda(totAluguel)}</td>
+              <td class="px-4 py-3">${formatMoeda(ehAdministracao ? totAdmin : totParcela)}</td>
+              <td class="px-4 py-3">${formatMoeda(totManut)}</td>
+              <td class="px-4 py-3">${formatMoeda(totProtecao)}</td>
+              <td class="px-4 py-3 ${totLiquido >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">${formatMoeda(totLiquido)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
-    <div class="hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm sm:block dark:border-slate-800 dark:bg-slate-900">
-      <table class="w-full text-left text-sm">
-        <thead class="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400 dark:border-slate-800">
-          <tr>
-            <th class="px-4 py-3">Mês</th><th class="px-4 py-3">Aluguel</th>
-            <th class="px-4 py-3">${ehAdministracao ? 'Administração' : 'Financiamento'}</th>
-            <th class="px-4 py-3">Manutenção</th><th class="px-4 py-3">Proteção</th><th class="px-4 py-3">Líquido</th>
+
+    <!-- Versão limpa só pra impressão/PDF (sempre clara, sem menu/botões) -->
+    <div class="hidden print:block text-black">
+      <div class="mb-6 flex items-start justify-between border-b-2 border-slate-800 pb-4">
+        <div>
+          <h1 class="text-xl font-bold">Relatório de Rentabilidade</h1>
+          <p class="text-sm text-slate-700">${esc(v.placa)} · ${esc(v.modelo)} · Proprietário: ${esc(v.proprietarioNome)}</p>
+        </div>
+        <div class="text-right text-xs text-slate-500">
+          <p>Desde ${formatDateBR(inicio)}</p>
+          <p>Gerado em ${formatDateBR(hojeISO())}</p>
+        </div>
+      </div>
+
+      <table class="w-full border-collapse text-sm">
+        <thead>
+          <tr class="border-b-2 border-slate-800">
+            <th class="py-2 text-left">Mês</th>
+            <th class="py-2 text-right">Aluguel</th>
+            <th class="py-2 text-right">${ehAdministracao ? 'Administração' : 'Financiamento'}</th>
+            <th class="py-2 text-right">Manutenção</th>
+            <th class="py-2 text-right">Proteção</th>
+            <th class="py-2 text-right">Líquido</th>
           </tr>
         </thead>
         <tbody>
           ${linhas.map((l) => `
-            <tr class="border-b border-slate-50 last:border-0 dark:border-slate-800/60">
-              <td class="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">${nomeMes(l.mes)}</td>
-              <td class="px-4 py-3">${formatMoeda(l.aluguel)}</td>
-              <td class="px-4 py-3 text-slate-500 dark:text-slate-400">${formatMoeda(ehAdministracao ? l.administracao : l.parcela)}</td>
-              <td class="px-4 py-3 text-slate-500 dark:text-slate-400">${formatMoeda(l.manutencao)}</td>
-              <td class="px-4 py-3 text-slate-500 dark:text-slate-400">${formatMoeda(l.protecao)}</td>
-              <td class="px-4 py-3 font-semibold ${l.liquido >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">${formatMoeda(l.liquido)}</td>
+            <tr class="border-b border-slate-300">
+              <td class="py-1.5">${nomeMes(l.mes)}</td>
+              <td class="py-1.5 text-right">${formatMoeda(l.aluguel)}</td>
+              <td class="py-1.5 text-right">${formatMoeda(ehAdministracao ? l.administracao : l.parcela)}</td>
+              <td class="py-1.5 text-right">${formatMoeda(l.manutencao)}</td>
+              <td class="py-1.5 text-right">${formatMoeda(l.protecao)}</td>
+              <td class="py-1.5 text-right font-semibold">${formatMoeda(l.liquido)}</td>
             </tr>`).join('')}
         </tbody>
         <tfoot>
-          <tr class="border-t border-slate-200 font-semibold dark:border-slate-700">
-            <td class="px-4 py-3">Total</td>
-            <td class="px-4 py-3">${formatMoeda(totAluguel)}</td>
-            <td class="px-4 py-3">${formatMoeda(ehAdministracao ? totAdmin : totParcela)}</td>
-            <td class="px-4 py-3">${formatMoeda(totManut)}</td>
-            <td class="px-4 py-3">${formatMoeda(totProtecao)}</td>
-            <td class="px-4 py-3 ${totLiquido >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">${formatMoeda(totLiquido)}</td>
+          <tr class="border-t-2 border-slate-800 font-bold">
+            <td class="py-2">Total</td>
+            <td class="py-2 text-right">${formatMoeda(totAluguel)}</td>
+            <td class="py-2 text-right">${formatMoeda(ehAdministracao ? totAdmin : totParcela)}</td>
+            <td class="py-2 text-right">${formatMoeda(totManut)}</td>
+            <td class="py-2 text-right">${formatMoeda(totProtecao)}</td>
+            <td class="py-2 text-right">${formatMoeda(totLiquido)}</td>
           </tr>
         </tfoot>
       </table>
+
+      <div class="mt-6 flex flex-wrap gap-x-8 gap-y-1 text-sm">
+        <p><span class="text-slate-500">Aluguel recebido (total):</span> <strong>${formatMoeda(totAluguel)}</strong></p>
+        <p><span class="text-slate-500">Gastos:</span> <strong>-${formatMoeda(totAdmin + totManut + totParcela + totProtecao)}</strong></p>
+        <p><span class="text-slate-500">Líquido desde o início:</span> <strong>${formatMoeda(totLiquido)}</strong></p>
+      </div>
+      <p class="mt-4 text-[10px] text-slate-400">Semana sem pagamento lançado no app conta pelo valor combinado em contrato; mês sem locatário não conta aluguel nem ${ehAdministracao ? 'administração' : 'parcela'}. · RM Veículos</p>
     </div>
-    ${souAdmin() ? `<button id="btn-trocar-veiculo-relatorio" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">← Escolher outro veículo</button>` : ''}
   `;
+  atualizarIcones();
   qs('#btn-trocar-veiculo-relatorio')?.addEventListener('click', () => { state.relatorioVeiculoId = ''; renderRelatorio(); });
+  qs('#btn-gerar-pdf')?.addEventListener('click', () => window.print());
 }
 
 // ---------------------------------------------------------------------------------------------
