@@ -149,7 +149,7 @@ export const LOCACOES_SEED = [
     dataFim: '2027-04-28',
     valorSemanal: VALOR_SEMANAL_PADRAO,
     diaPagamento: 'segunda',
-    diaPagamentoAnterior: 'quarta',
+    diaPagamentoAnterior: 'quinta',
     caucaoValor: CAUCAO_PADRAO,
     caucaoStatus: 'recebida',
     multaRescisoria: 750,
