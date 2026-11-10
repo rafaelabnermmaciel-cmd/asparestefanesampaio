@@ -34,8 +34,8 @@ export const VEICULOS_SEED = [
     proprietarioNome: 'Rafael Abner Machado Maciel',
     tipoReceita: 'total', // é seu — a renda é o aluguel inteiro, menos financiamento/gastos
     valorCompra: 120000,
-    dataInicioOperacao: '2026-05-28',
-    kmInicial: 52993, // termo de vistoria assinado com o Geudivaldo, 28/05/2026
+    dataInicioOperacao: '2026-05-29',
+    kmInicial: 52993, // termo de vistoria assinado com o Geudivaldo, 29/05/2026
     protecaoVeicularMensal: PROTECAO_VEICULAR_MENSAL,
     status: 'ativo',
   },
@@ -112,7 +112,7 @@ export const LOCACOES_SEED = [
     id: 'locacao-ssf-geudivaldo',
     veiculoId: 'veiculo-ssf4h14',
     locatarioNome: 'Geudivaldo Ribeiro de Souza',
-    dataRetirada: '2026-05-28',
+    dataRetirada: '2026-05-29',
     dataFim: '2026-08-05',
     valorSemanal: 1550,
     diaPagamento: 'quinta',
