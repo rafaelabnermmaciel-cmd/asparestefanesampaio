@@ -1256,6 +1256,67 @@ function nomeMes(mesISO) {
   return `${nomes[mes - 1]}/${String(ano).slice(2)}`;
 }
 
+// Dia em que a cobrança semanal passou a cair sempre na segunda-feira (contratos mais antigos
+// ficam registrados com o dia que valia na época — ver diaPagamentoAnterior da locação).
+const DATA_TROCA_DIA_PAGAMENTO = '2026-11-09';
+
+function isoDeData(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Fim de verdade da locação pra fins de relatório: se já encerrou, usa a data real (dataFimReal,
+// quando foi encerrada pelo app, ou dataFim, quando o histórico já veio com a data real); se
+// ainda está ativa, nunca passa de hoje (não projeta cobrança de semana que ainda não chegou).
+function fimEfetivoLocacao(loc) {
+  const hoje = hojeISO();
+  if (loc.status === 'encerrada') return loc.dataFimReal || loc.dataFim || hoje;
+  return loc.dataFim && loc.dataFim < hoje ? loc.dataFim : hoje;
+}
+
+// Todas as datas de cobrança (segundo o dia da semana combinado no contrato) de uma locação,
+// do início até o fim efetivo — é o que dá pra reconstruir o aluguel desde o início de cada
+// contrato, mesmo pras semanas de locatários antigos que nunca tiveram pagamento lançado no app.
+function datasCobrancaLocacao(loc) {
+  if (!loc.dataRetirada) return [];
+  const fim = fimEfetivoLocacao(loc);
+  if (loc.dataRetirada > fim) return [];
+  const datas = [];
+  const d = new Date(`${loc.dataRetirada}T00:00:00`);
+  const dFim = new Date(`${fim}T00:00:00`);
+  while (d <= dFim) {
+    const iso = isoDeData(d);
+    const diaNome = (loc.diaPagamentoAnterior && iso < DATA_TROCA_DIA_PAGAMENTO) ? loc.diaPagamentoAnterior : loc.diaPagamento;
+    if (d.getDay() === (DIAS_SEMANA[diaNome] ?? 1)) datas.push(iso);
+    d.setDate(d.getDate() + 1);
+  }
+  return datas;
+}
+
+// Aluguel de cada mês, somando TODOS os contratos (ativos e já encerrados) desde o início da
+// operação do veículo: usa o pagamento realmente registrado quando existe, e completa com o
+// valor combinado em contrato pras datas de cobrança que nunca tiveram lançamento — é assim que
+// o relatório mostra o total desde o início, igual ao estudo de rentabilidade original, sem
+// precisar lançar manualmente cada semana de locatários que já saíram.
+function aluguelPorMesDoVeiculo(veiculoId) {
+  const aluguelPorMes = {};
+  locacoesDoVeiculo(veiculoId).forEach((loc) => {
+    const pagamentosDaLocacao = state.pagamentos.filter((p) => p.locacaoId === loc.id && p.status === 'pago');
+    const datasRegistradas = new Set();
+    pagamentosDaLocacao.forEach((p) => {
+      const mes = (p.dataReferencia || '').slice(0, 7);
+      if (!mes) return;
+      datasRegistradas.add(p.dataReferencia);
+      aluguelPorMes[mes] = (aluguelPorMes[mes] || 0) + Number(p.valor || 0);
+    });
+    datasCobrancaLocacao(loc).forEach((dataRef) => {
+      if (datasRegistradas.has(dataRef)) return;
+      const mes = dataRef.slice(0, 7);
+      aluguelPorMes[mes] = (aluguelPorMes[mes] || 0) + Number(loc.valorSemanal || 0);
+    });
+  });
+  return aluguelPorMes;
+}
+
 function renderRelatorio() {
   const container = qs('#page-relatorio');
   const veiculoId = souAdmin() ? state.relatorioVeiculoId : state.auth.perfil?.veiculoId;
@@ -1281,7 +1342,6 @@ function renderRelatorio() {
     return;
   }
 
-  const pagamentosPagos = state.pagamentos.filter((p) => p.veiculoId === veiculoId && p.status === 'pago');
   const manuts = manutencoesDoVeiculo(veiculoId);
   const fins = financiamentosDoVeiculo(veiculoId);
   const parcelaMensal = fins.reduce((s, f) => s + Number(f.parcela || 0), 0);
@@ -1289,12 +1349,16 @@ function renderRelatorio() {
   const taxaAdmin = Number(v.taxaAdministracaoMensal || 0);
   const ehAdministracao = v.tipoReceita === 'administracao';
 
-  const inicio = v.dataInicioOperacao || pagamentosPagos[0]?.dataReferencia || hojeISO();
+  const aluguelPorMes = aluguelPorMesDoVeiculo(veiculoId);
+  const primeiraLocacao = locacoesDoVeiculo(veiculoId).reduce((maisAntiga, l) => (
+    !maisAntiga || (l.dataRetirada || '') < maisAntiga ? l.dataRetirada : maisAntiga
+  ), null);
+  const inicio = v.dataInicioOperacao || primeiraLocacao || hojeISO();
   const meses = mesesEntre(inicio, hojeISO());
 
   let totAluguel = 0, totAdmin = 0, totManut = 0, totParcela = 0, totProtecao = 0, totLiquido = 0;
   const linhas = meses.map((mes) => {
-    const aluguel = pagamentosPagos.filter((p) => (p.dataReferencia || '').startsWith(mes)).reduce((s, p) => s + Number(p.valor || 0), 0);
+    const aluguel = aluguelPorMes[mes] || 0;
     const manutencao = manuts.filter((m) => (m.dataRealizada || '').startsWith(mes)).reduce((s, m) => s + Number(m.valor || 0), 0);
     const administracao = ehAdministracao && aluguel > 0 ? taxaAdmin : 0;
     const parcela = ehAdministracao ? 0 : parcelaMensal;
@@ -1323,6 +1387,7 @@ function renderRelatorio() {
         <p class="text-lg font-semibold text-indigo-700 dark:text-indigo-300">${formatMoeda(totLiquido)}</p>
       </div>
     </div>
+    <p class="text-[11px] text-slate-400">Desde ${formatDateBR(inicio)} (início da operação deste veículo). Semana sem pagamento lançado no app conta pelo valor combinado em contrato; mês sem locatário não conta aluguel nem ${ehAdministracao ? 'administração' : 'parcela'}.</p>
 
     <div class="space-y-2 sm:hidden">
       ${linhas.map((l) => `
