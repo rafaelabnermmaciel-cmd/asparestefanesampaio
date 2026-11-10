@@ -660,7 +660,7 @@ function renderLocacoes() {
               <td class="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">${l.caucaoValor ? formatMoeda(l.caucaoValor) : '—'} ${l.caucaoStatus ? `(${l.caucaoStatus})` : ''}</td>
               <td class="px-4 py-3"><span class="badge ${STATUS_LOCACAO[l.status]?.cor || ''}">${STATUS_LOCACAO[l.status]?.label || l.status}</span></td>
               <td class="px-4 py-3 text-right whitespace-nowrap">
-                ${l.observacoes ? `<span title="${esc(l.observacoes)}" class="mr-2 cursor-help text-slate-400" aria-label="Tem observações">📝</span>` : ''}
+                ${l.observacoes ? `<button data-ver-observacao="${l.id}" class="mr-3 text-xs font-medium text-amber-600 hover:underline dark:text-amber-400" title="Ver observações">📝 Notas</button>` : ''}
                 <button data-editar-locacao="${l.id}" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Editar</button>
                 ${l.status === 'ativa' ? `<button data-encerrar-locacao="${l.id}" class="ml-3 text-xs font-medium text-rose-600 hover:underline dark:text-rose-400">Encerrar</button>` : ''}
               </td>
@@ -673,6 +673,10 @@ function renderLocacoes() {
 
   qs('#btn-nova-locacao').addEventListener('click', () => abrirModalLocacao());
   container.querySelectorAll('[data-editar-locacao]').forEach((btn) => btn.addEventListener('click', () => abrirModalLocacao(state.locacoes.find((l) => l.id === btn.dataset.editarLocacao))));
+  container.querySelectorAll('[data-ver-observacao]').forEach((btn) => btn.addEventListener('click', () => {
+    const l = state.locacoes.find((x) => x.id === btn.dataset.verObservacao);
+    abrirModalObservacao(l);
+  }));
   container.querySelectorAll('[data-encerrar-locacao]').forEach((btn) => btn.addEventListener('click', async () => {
     if (!confirm('Encerrar esta locação (veículo devolvido)?')) return;
     await encerrarLocacao(btn.dataset.encerrarLocacao, hojeISO());
@@ -728,6 +732,7 @@ function abrirModalLocacao(locacao = null) {
             <option value="recebida" ${(locacao?.caucaoStatus || 'recebida') === 'recebida' ? 'selected' : ''}>Recebida</option>
             <option value="parcial" ${locacao?.caucaoStatus === 'parcial' ? 'selected' : ''}>Parcial</option>
             <option value="devolvida" ${locacao?.caucaoStatus === 'devolvida' ? 'selected' : ''}>Devolvida</option>
+            <option value="retida" ${locacao?.caucaoStatus === 'retida' ? 'selected' : ''}>Retida (não devolvida)</option>
           </select>
         </label>
       </div>
@@ -771,6 +776,24 @@ function abrirModalLocacao(locacao = null) {
       fecharModal();
     } catch (err) { toast(err.message); }
   });
+}
+
+function abrirModalObservacao(locacao) {
+  const v = veiculoPorId(locacao.veiculoId);
+  const html = `
+    <div class="mb-4 flex items-start justify-between gap-3">
+      <div>
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-white">${esc(locacao.locatarioNome)}</h2>
+        <p class="text-xs text-slate-400">${esc(v?.placa || '')} · ${formatDateBR(locacao.dataRetirada)} a ${formatDateBR(locacao.dataFim) || 'em aberto'}</p>
+      </div>
+    </div>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-relaxed whitespace-pre-wrap text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">${esc(locacao.observacoes)}</div>
+    <div class="flex justify-end pt-4">
+      <button type="button" id="btn-fechar-observacao" class="rounded-xl px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Fechar</button>
+    </div>
+  `;
+  abrirModal(html);
+  qs('#btn-fechar-observacao').addEventListener('click', fecharModal);
 }
 
 // ---------------------------------------------------------------------------------------------
