@@ -140,6 +140,7 @@ export const LOCACOES_SEED = [
     locatarioNome: 'Luiza Cristina Moreira Bastos',
     locatarioCpf: '021.886.991-65',
     dataRetirada: '2026-10-28',
+    kmRetirada: 79891, // revisão foi feita no dia anterior ao contrato dela
     dataFim: '2027-04-28',
     valorSemanal: VALOR_SEMANAL_PADRAO,
     diaPagamento: 'segunda',
@@ -183,6 +184,7 @@ export const LOCACOES_SEED = [
     locatarioNome: 'Matheus Pereira dos Santos',
     locatarioCpf: '025.744.181-66',
     dataRetirada: '2026-10-15',
+    kmRetirada: 87156, // termo de vistoria dele, 15/10/2026
     dataFim: '2027-04-15',
     valorSemanal: VALOR_SEMANAL_PADRAO,
     diaPagamento: 'segunda',
@@ -214,6 +216,7 @@ export const LOCACOES_SEED = [
     locatarioNome: 'Herbert Vieira Pedroza',
     locatarioCpf: '062.524.541-50',
     dataRetirada: '2026-10-13',
+    kmRetirada: 62455, // termo de vistoria dele, 13/10/2026
     dataFim: '2027-04-13',
     valorSemanal: VALOR_SEMANAL_PADRAO,
     diaPagamento: 'segunda',
@@ -264,14 +267,15 @@ function somarDiasISO(iso, dias) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// Calcula a próxima revisão prevista. O km é a previsão principal — sempre última revisão +
-// 20.000 (espaçamento fixo da BYD), confiável independente de qualquer outra coisa. A data é só
-// um teto ("no máximo até"), estimado pela média de km rodado por dia: usa a leitura de km mais
-// recente disponível (kmAtual/dataLeituraAtual do veículo, se houver e for mais nova que a
-// última revisão — ex: conferida numa planilha; senão, a própria última revisão) e o início de
-// operação como ponto de partida. Sem dados suficientes, ou se a projeção ficar muito velha (mais
-// de 30 dias no passado — carro parado ou trocou de motorista no meio do caminho), cai pra +1 ano.
-export function calcularProximaRevisao(veiculo, manutencao) {
+// Calcula a próxima revisão prevista, em 3 partes:
+// - kmPrevisto: sempre última revisão + 20.000 (espaçamento fixo da BYD) — o dado confiável.
+// - dataLimite: sempre última revisão + 1 ano — prazo oficial, fixo, não é estimativa.
+// - dataEstimativa: quando é que o km previsto deve ser atingido na prática, pela média de uso —
+//   só usa pontos de km (retirada do motorista atual, última revisão, leitura mais recente do
+//   veículo) que caem DENTRO do contrato do locatário ativo, pra não misturar o ritmo de um
+//   motorista que já saiu com o de quem está no carro agora. Sem pelo menos 2 pontos dentro do
+//   contrato atual, fica null (sem dado suficiente ainda) — nesse caso só vale o dataLimite.
+export function calcularProximaRevisao(veiculo, manutencao, locacaoAtiva) {
   const kmUltimaRevisao = manutencao.kmRealizado;
   const dataUltimaRevisao = manutencao.dataRealizada;
   const kmPrevisto = kmUltimaRevisao + 20000;
@@ -280,32 +284,30 @@ export function calcularProximaRevisao(veiculo, manutencao) {
     Math.abs(m.km - kmPrevisto) < Math.abs(melhor.km - kmPrevisto) ? m : melhor
   );
 
-  let kmReferencia = kmUltimaRevisao;
-  let dataReferencia = dataUltimaRevisao;
-  if (veiculo?.kmAtual != null && veiculo?.dataLeituraAtual && veiculo.dataLeituraAtual > dataUltimaRevisao) {
-    kmReferencia = veiculo.kmAtual;
-    dataReferencia = veiculo.dataLeituraAtual;
-  }
+  const [ano, mes, dia] = dataUltimaRevisao.split('-').map(Number);
+  const dataLimite = `${ano + 1}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
 
-  let dataPrevista = null;
-  if (veiculo?.kmInicial != null && veiculo?.dataInicioOperacao) {
-    const dias = diasEntreISO(veiculo.dataInicioOperacao, dataReferencia);
-    const kmRodados = kmReferencia - veiculo.kmInicial;
-    if (dias > 0 && kmRodados > 0) {
-      const mediaKmDia = kmRodados / dias;
-      const kmRestante = kmPrevisto - kmReferencia;
-      const candidata = somarDiasISO(dataReferencia, Math.round(kmRestante / mediaKmDia));
-      // Só confia na projeção se ela ainda não ficou muito velha (mais de 30 dias no passado):
-      // depois disso o ritmo usado deixou de refletir a realidade — por exemplo, o carro ficou
-      // parado ou trocou de motorista no meio do caminho — e cai de volta pra +1 ano.
-      const hojeISO = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
-      if (diasEntreISO(candidata, hojeISO) <= 30) dataPrevista = candidata;
+  let dataEstimativa = null;
+  if (locacaoAtiva?.dataRetirada) {
+    const pontos = [];
+    if (locacaoAtiva.kmRetirada != null) pontos.push({ km: locacaoAtiva.kmRetirada, data: locacaoAtiva.dataRetirada });
+    if (dataUltimaRevisao >= locacaoAtiva.dataRetirada) pontos.push({ km: kmUltimaRevisao, data: dataUltimaRevisao });
+    if (veiculo?.kmAtual != null && veiculo?.dataLeituraAtual && veiculo.dataLeituraAtual >= locacaoAtiva.dataRetirada) {
+      pontos.push({ km: veiculo.kmAtual, data: veiculo.dataLeituraAtual });
+    }
+    pontos.sort((a, b) => a.data.localeCompare(b.data));
+    if (pontos.length >= 2) {
+      const base = pontos[0];
+      const recente = pontos[pontos.length - 1];
+      const dias = diasEntreISO(base.data, recente.data);
+      const kmRodados = recente.km - base.km;
+      if (dias > 0 && kmRodados > 0) {
+        const mediaKmDia = kmRodados / dias;
+        const kmRestante = kmPrevisto - recente.km;
+        dataEstimativa = somarDiasISO(recente.data, Math.round(kmRestante / mediaKmDia));
+      }
     }
   }
-  if (!dataPrevista) {
-    const [ano, mes, dia] = dataUltimaRevisao.split('-').map(Number);
-    dataPrevista = `${ano + 1}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
-  }
 
-  return { kmPrevisto, valorPrevisto: marcoProximo.valor, dataPrevista };
+  return { kmPrevisto, valorPrevisto: marcoProximo.valor, dataLimite, dataEstimativa };
 }

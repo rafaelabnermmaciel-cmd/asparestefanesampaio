@@ -268,7 +268,7 @@ function renderPainel() {
     const loc = locacaoAtiva(v.id);
     const fins = financiamentosDoVeiculo(v.id);
     const rev = ultimaRevisao(v.id);
-    const prox = rev ? calcularProximaRevisao(v, rev) : null;
+    const prox = rev ? calcularProximaRevisao(v, rev, loc) : null;
 
     let receitaMes = 0;
     let detalheReceita = null;
@@ -305,11 +305,12 @@ function renderPainel() {
 
     let proxRevisaoHtml = '<p class="text-xs text-slate-400">Sem revisão registrada</p>';
     if (prox) {
-      const diasData = diffDiasISO(hoje, prox.dataPrevista);
-      if (diasData <= 30) revisoesProximas++;
+      const diasAlerta = diffDiasISO(hoje, prox.dataEstimativa || prox.dataLimite);
+      if (diasAlerta <= 30) revisoesProximas++;
       proxRevisaoHtml = `
         <p class="text-sm font-medium text-slate-700 dark:text-slate-200">${prox.kmPrevisto.toLocaleString('pt-BR')} km${prox.valorPrevisto ? ` <span class="font-normal text-slate-400">· ~${formatMoeda(prox.valorPrevisto)}</span>` : ''}</p>
-        <p class="text-[11px] text-slate-400">ou no máximo até ${formatDateBR(prox.dataPrevista)} (estimativa pela média de uso)</p>`;
+        <p class="text-[11px] text-slate-400">Prazo oficial: até ${formatDateBR(prox.dataLimite)}</p>
+        ${prox.dataEstimativa ? `<p class="text-[11px] text-slate-400">Estimativa p/ este motorista: ${formatDateBR(prox.dataEstimativa)}</p>` : `<p class="text-[11px] text-slate-400">Estimativa: ainda sem dados suficientes deste motorista</p>`}`;
     }
 
     return `
@@ -430,8 +431,29 @@ function renderVeiculos() {
       ${!jaCarregado ? `<button id="btn-seed" class="rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-100 dark:border-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-400">Carregar frota padrão</button>` : ''}
       <button id="btn-novo-veiculo" class="rounded-xl bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">+ Novo veículo</button>
     </div>
-    <div class="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <table class="w-full min-w-[760px] text-left text-sm">
+    ${lista.length ? `
+    <div class="space-y-3 sm:hidden">
+      ${lista.map((v) => `
+        <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div class="mb-2 flex items-start justify-between gap-2">
+            <div>
+              <p class="text-sm font-semibold text-slate-900 dark:text-white">${esc(v.placa)}</p>
+              <p class="text-xs text-slate-400">${esc(v.modelo)} · ${esc(v.cor || '—')}</p>
+            </div>
+            <span class="badge ${TIPO_RECEITA_LABEL[v.tipoReceita]?.cor || ''}">${TIPO_RECEITA_LABEL[v.tipoReceita]?.label || v.tipoReceita}</span>
+          </div>
+          <p class="text-xs text-slate-500 dark:text-slate-400">${esc(v.proprietarioNome)}</p>
+          <div class="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 dark:border-slate-800">
+            <span class="text-xs text-slate-400">${v.status === 'ativo' ? 'Ativo' : 'Inativo'}</span>
+            <div>
+              ${v.tipoReceita === 'total' ? `<button data-financiamento="${v.id}" class="mr-3 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Financiamento</button>` : ''}
+              <button data-editar-veiculo="${v.id}" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Editar</button>
+            </div>
+          </div>
+        </div>`).join('')}
+    </div>` : ''}
+    <div class="hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm sm:block dark:border-slate-800 dark:bg-slate-900">
+      <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400 dark:border-slate-800">
           <tr>
             <th class="px-4 py-3">Placa</th><th class="px-4 py-3">Modelo / Cor</th><th class="px-4 py-3">Proprietário</th>
@@ -661,8 +683,37 @@ function renderLocacoes() {
     <div class="flex justify-end">
       <button id="btn-nova-locacao" class="rounded-xl bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">+ Nova locação</button>
     </div>
-    <div class="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <table class="w-full min-w-[840px] text-left text-sm">
+    ${lista.length ? `
+    <div class="space-y-3 sm:hidden">
+      ${lista.map((l) => {
+        const v = veiculoPorId(l.veiculoId);
+        return `
+        <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div class="mb-2 flex items-start justify-between gap-2">
+            <div>
+              <p class="text-sm font-semibold text-slate-900 dark:text-white">${esc(l.locatarioNome)}</p>
+              <p class="text-xs text-slate-400">${esc(v?.placa || '—')}</p>
+            </div>
+            <span class="badge ${STATUS_LOCACAO[l.status]?.cor || ''}">${STATUS_LOCACAO[l.status]?.label || l.status}</span>
+          </div>
+          <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs text-slate-500 dark:text-slate-400">
+            <div><span class="text-slate-400">Retirada</span><br>${formatDateBR(l.dataRetirada)}</div>
+            <div><span class="text-slate-400">Fim previsto</span><br>${formatDateBR(l.dataFim)}</div>
+            <div><span class="text-slate-400">Valor/dia pag.</span><br>${formatMoeda(l.valorSemanal)} · ${DIAS_SEMANA_LABEL[l.diaPagamento] || l.diaPagamento}</div>
+            <div><span class="text-slate-400">Caução</span><br>${l.caucaoValor ? formatMoeda(l.caucaoValor) : '—'} ${l.caucaoStatus ? `(${l.caucaoStatus})` : ''}</div>
+          </div>
+          <div class="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 dark:border-slate-800">
+            <div>${l.observacoes ? `<button data-ver-observacao="${l.id}" class="text-xs font-medium text-amber-600 hover:underline dark:text-amber-400">📝 Notas</button>` : ''}</div>
+            <div>
+              <button data-editar-locacao="${l.id}" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Editar</button>
+              ${l.status === 'ativa' ? `<button data-encerrar-locacao="${l.id}" class="ml-3 text-xs font-medium text-rose-600 hover:underline dark:text-rose-400">Encerrar</button>` : ''}
+            </div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>` : ''}
+    <div class="hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm sm:block dark:border-slate-800 dark:bg-slate-900">
+      <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400 dark:border-slate-800">
           <tr>
             <th class="px-4 py-3">Veículo</th><th class="px-4 py-3">Locatário</th><th class="px-4 py-3">Retirada</th>
@@ -732,20 +783,23 @@ function abrirModalLocacao(locacao = null) {
         <label class="text-xs text-slate-500 dark:text-slate-400">Data de retirada *
           <input required type="date" name="dataRetirada" value="${esc(locacao?.dataRetirada || hojeISO())}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
         </label>
-        <label class="text-xs text-slate-500 dark:text-slate-400">Fim previsto (prazo mínimo)
-          <input type="date" name="dataFim" value="${esc(locacao?.dataFim || '')}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+        <label class="text-xs text-slate-500 dark:text-slate-400">Km na retirada <span class="text-slate-300">(do termo de vistoria)</span>
+          <input type="number" name="kmRetirada" value="${locacao?.kmRetirada ?? ''}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
         </label>
       </div>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label class="text-xs text-slate-500 dark:text-slate-400">Fim previsto (prazo mínimo)
+          <input type="date" name="dataFim" value="${esc(locacao?.dataFim || '')}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+        </label>
         <label class="text-xs text-slate-500 dark:text-slate-400">Valor semanal
           <input type="number" step="0.01" name="valorSemanal" value="${locacao?.valorSemanal ?? VALOR_SEMANAL_PADRAO}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
         </label>
-        <label class="text-xs text-slate-500 dark:text-slate-400">Dia de pagamento
-          <select name="diaPagamento" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900">
-            ${Object.entries(DIAS_SEMANA_LABEL).map(([v, l]) => `<option value="${v}" ${(locacao?.diaPagamento || 'segunda') === v ? 'selected' : ''}>${l}</option>`).join('')}
-          </select>
-        </label>
       </div>
+      <label class="block text-xs text-slate-500 dark:text-slate-400">Dia de pagamento
+        <select name="diaPagamento" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900">
+          ${Object.entries(DIAS_SEMANA_LABEL).map(([v, l]) => `<option value="${v}" ${(locacao?.diaPagamento || 'segunda') === v ? 'selected' : ''}>${l}</option>`).join('')}
+        </select>
+      </label>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label class="text-xs text-slate-500 dark:text-slate-400">Caução
           <input type="number" step="0.01" name="caucaoValor" value="${locacao?.caucaoValor ?? CAUCAO_PADRAO}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
@@ -785,6 +839,7 @@ function abrirModalLocacao(locacao = null) {
       locatarioCpf: fd.get('locatarioCpf') || '',
       locatarioContato: fd.get('locatarioContato') || '',
       dataRetirada: fd.get('dataRetirada'),
+      kmRetirada: fd.get('kmRetirada') ? Number(fd.get('kmRetirada')) : null,
       dataFim: fd.get('dataFim') || '',
       valorSemanal: Number(fd.get('valorSemanal') || VALOR_SEMANAL_PADRAO),
       diaPagamento: fd.get('diaPagamento'),
@@ -850,8 +905,31 @@ function renderPagamentos() {
       </div>
       <button id="btn-novo-pagamento" class="rounded-xl bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">+ Novo pagamento</button>
     </div>
-    <div class="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <table class="w-full min-w-[760px] text-left text-sm">
+    ${itens.length ? `
+    <div class="space-y-3 sm:hidden">
+      ${itens.map((p) => {
+        const v = veiculoPorId(p.veiculoId);
+        const loc = state.locacoes.find((l) => l.id === p.locacaoId);
+        return `
+        <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div class="mb-2 flex items-start justify-between gap-2">
+            <div>
+              <p class="text-sm font-semibold text-slate-900 dark:text-white">${esc(v?.placa || '—')} · ${esc(loc?.locatarioNome || '—')}</p>
+              <p class="text-xs text-slate-400">Ref. ${formatDateBR(p.dataReferencia)}${p.dataPagamentoReal ? ` · pago em ${formatDateBR(p.dataPagamentoReal)}` : ''}</p>
+            </div>
+            <p class="text-sm font-semibold text-slate-800 dark:text-slate-100">${formatMoeda(p.valor)}</p>
+          </div>
+          <div class="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 dark:border-slate-800">
+            <select data-status-pagamento="${p.id}" class="rounded-lg border px-2 py-1 text-xs font-semibold ${STATUS_PAGAMENTO[p.status]?.cor || ''}">
+              ${Object.entries(STATUS_PAGAMENTO).map(([v2, s]) => `<option value="${v2}" ${p.status === v2 ? 'selected' : ''}>${s.label}</option>`).join('')}
+            </select>
+            <button data-editar-pagamento="${p.id}" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Editar</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>` : ''}
+    <div class="hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm sm:block dark:border-slate-800 dark:bg-slate-900">
+      <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400 dark:border-slate-800">
           <tr>
             <th class="px-4 py-3">Referência</th><th class="px-4 py-3">Veículo / Locatário</th>
@@ -972,17 +1050,19 @@ function renderManutencoes() {
         <p class="text-sm font-semibold text-slate-900 dark:text-white">${esc(v.placa)}</p>
         <p class="mt-2 text-xs text-slate-400">Nenhuma revisão registrada ainda.</p>
       </div>`;
-    const prox = calcularProximaRevisao(v, rev);
-    const diasData = diffDiasISO(hoje, prox.dataPrevista);
-    const alerta = diasData <= 30;
+    const loc = locacaoAtiva(v.id);
+    const prox = calcularProximaRevisao(v, rev, loc);
+    const diasAlerta = diffDiasISO(hoje, prox.dataEstimativa || prox.dataLimite);
+    const alerta = diasAlerta <= 30;
     return `
       <div class="rounded-2xl border ${alerta ? 'border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/20' : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'} p-5 shadow-sm">
         <p class="text-sm font-semibold text-slate-900 dark:text-white">${esc(v.placa)} <span class="font-normal text-slate-400">· ${esc(v.modelo)}</span></p>
         <p class="mt-2 text-xs text-slate-400">Última revisão</p>
         <p class="text-sm text-slate-700 dark:text-slate-200">${rev.kmRealizado.toLocaleString('pt-BR')} km · ${formatDateBR(rev.dataRealizada)}</p>
-        <p class="mt-2 text-xs text-slate-400">Previsão de revisão</p>
+        <p class="mt-2 text-xs text-slate-400">Próxima revisão (previsão)</p>
         <p class="text-sm font-medium ${alerta ? 'text-amber-700 dark:text-amber-400' : 'text-slate-700 dark:text-slate-200'}">${prox.kmPrevisto.toLocaleString('pt-BR')} km${prox.valorPrevisto ? ` <span class="font-normal ${alerta ? '' : 'text-slate-400'}">· ~${formatMoeda(prox.valorPrevisto)}</span>` : ''}</p>
-        <p class="text-[11px] text-slate-400">ou no máximo até ${formatDateBR(prox.dataPrevista)} (estimativa pela média de uso, ${diasData >= 0 ? `faltam ${diasData} dia(s)` : 'já passou'})</p>
+        <p class="text-[11px] text-slate-400">Prazo oficial (último + 1 ano): ${formatDateBR(prox.dataLimite)}</p>
+        <p class="text-[11px] ${alerta ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}">${prox.dataEstimativa ? `Estimativa p/ este motorista: ${formatDateBR(prox.dataEstimativa)} (${diasAlerta >= 0 ? `faltam ${diasAlerta} dia(s)` : 'já passou'})` : 'Estimativa: ainda sem dados suficientes deste motorista'}</p>
       </div>`;
   }).join('');
 
@@ -995,8 +1075,19 @@ function renderManutencoes() {
       <button id="btn-nova-manutencao" class="rounded-xl bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">+ Registrar manutenção</button>
     </div>
 
-    <div class="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <table class="w-full min-w-[640px] text-left text-sm">
+    ${historico.length ? `
+    <div class="space-y-2 sm:hidden">
+      ${historico.map((m) => `
+        <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div class="flex items-center justify-between">
+            <p class="text-sm font-medium text-slate-800 dark:text-slate-100">${esc(veiculoPorId(m.veiculoId)?.placa || '—')} <span class="font-normal capitalize text-slate-400">· ${esc(m.tipo)}</span></p>
+            <p class="text-xs text-slate-400">${formatDateBR(m.dataRealizada)}</p>
+          </div>
+          <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">${m.kmRealizado ? `${m.kmRealizado.toLocaleString('pt-BR')} km` : '—'}${m.valor ? ` · ${formatMoeda(m.valor)}` : ''}</p>
+        </div>`).join('')}
+    </div>` : ''}
+    <div class="hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm sm:block dark:border-slate-800 dark:bg-slate-900">
+      <table class="w-full text-left text-sm">
         <thead class="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400 dark:border-slate-800">
           <tr><th class="px-4 py-3">Data</th><th class="px-4 py-3">Veículo</th><th class="px-4 py-3">Tipo</th><th class="px-4 py-3">Km</th><th class="px-4 py-3">Valor</th></tr>
         </thead>
