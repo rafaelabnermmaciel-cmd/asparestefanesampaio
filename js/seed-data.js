@@ -119,6 +119,11 @@ export const LOCACOES_SEED = [
     caucaoValor: 3000,
     caucaoStatus: 'retida',
     observacoes: 'Caução de R$3.000 retida integralmente. Mesmo assim ainda ficou devendo R$1.307,14 (R$807,14 de diárias em aberto + R$500,00 de orçamento de polimento/reparo).',
+    // Aluguel contratual do período (10 semanas × R$1.550 = R$15.500) menos os R$807,14 de
+    // diárias que ficaram em aberto e nunca foram recebidas (nem com a caução, que foi toda
+    // usada e ainda assim não cobriu tudo). Os R$500 de polimento/reparo em aberto não entram
+    // aqui — não são aluguel, e também nunca foram recebidos.
+    aluguelTotalReal: 14692.86,
     status: 'encerrada',
   },
   {
@@ -131,7 +136,7 @@ export const LOCACOES_SEED = [
     diaPagamento: 'quinta',
     caucaoValor: CAUCAO_PADRAO,
     caucaoStatus: 'parcial',
-    observacoes: 'Caução de R$2.500: reteve R$1.500 (diárias em atraso na devolução, pneu e polimento) e devolveu R$1.000. Ainda falta acertar R$150 (metade do conserto do carregador portátil, que quebrou enquanto estava com ele).',
+    observacoes: 'Caução de R$2.500: reteve R$1.500 (4 diárias e meia em atraso + R$200 de atraso = aluguel; R$100 de pneu + o resto de polimento = gastos) e devolveu R$1.000. Ainda falta acertar R$150 (metade do conserto do carregador portátil, que quebrou enquanto estava com ele — ele não pagou).',
     status: 'encerrada',
   },
   {
