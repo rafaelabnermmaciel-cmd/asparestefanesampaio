@@ -74,6 +74,7 @@ export const VEICULOS_SEED = [
     tipoReceita: 'administracao',
     valorCompra: 118000,
     dataInicioOperacao: '2026-04-27', // 1º contrato (Gustavo), não o do Herbert
+    administracaoDesde: '2026-10-13', // só passou a cobrar taxa de administração a partir do Herbert — o Gustavo não teve
     kmInicial: 29000, // km que o carro tinha na compra
     protecaoVeicularMensal: PROTECAO_VEICULAR_MENSAL,
     taxaAdministracaoMensal: TAXA_ADMINISTRACAO_MENSAL,

@@ -1393,7 +1393,8 @@ function renderRelatorio() {
   const linhas = meses.map((mes) => {
     const aluguel = aluguelPorMes[mes] || 0;
     const manutencao = manuts.filter((m) => (m.dataRealizada || '').startsWith(mes)).reduce((s, m) => s + Number(m.valor || 0), 0);
-    const administracao = ehAdministracao && aluguel > 0 ? taxaAdmin : 0;
+    const administracaoAtiva = !v.administracaoDesde || mes >= v.administracaoDesde.slice(0, 7);
+    const administracao = ehAdministracao && aluguel > 0 && administracaoAtiva ? taxaAdmin : 0;
     const parcela = ehAdministracao ? 0 : parcelaMensal;
     const protecao = protecaoMensal;
     const liquido = aluguel - administracao - manutencao - parcela - protecao;
