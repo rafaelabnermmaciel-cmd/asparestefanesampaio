@@ -200,6 +200,7 @@ export const LOCACOES_SEED = [
     valorSemanal: VALOR_SEMANAL_PADRAO,
     diaPagamento: 'segunda',
     diaPagamentoAnterior: 'quinta',
+    dataTrocaDiaPagamento: '2026-11-02', // trocou de dia uma semana antes da Luiza
     caucaoValor: CAUCAO_PADRAO,
     caucaoStatus: 'recebida',
     multaRescisoria: 750,
@@ -232,6 +233,7 @@ export const LOCACOES_SEED = [
     valorSemanal: VALOR_SEMANAL_PADRAO,
     diaPagamento: 'segunda',
     diaPagamentoAnterior: 'terca',
+    dataTrocaDiaPagamento: '2026-11-02', // trocou de dia uma semana antes da Luiza
     caucaoValor: CAUCAO_PADRAO,
     caucaoStatus: 'recebida',
     multaRescisoria: 750,

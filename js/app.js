@@ -1256,8 +1256,11 @@ function nomeMes(mesISO) {
   return `${nomes[mes - 1]}/${String(ano).slice(2)}`;
 }
 
-// Dia em que a cobrança semanal passou a cair sempre na segunda-feira (contratos mais antigos
-// ficam registrados com o dia que valia na época — ver diaPagamentoAnterior da locação).
+// Dia padrão em que a cobrança semanal passou a cair sempre na segunda-feira (contratos mais
+// antigos ficam registrados com o dia que valia na época — ver diaPagamentoAnterior da locação).
+// Cada locação pode ter sua própria data de troca (campo dataTrocaDiaPagamento), já que nem
+// todo mundo mudou de dia na mesma semana — esta aqui é só o valor padrão quando a locação não
+// especifica a sua.
 const DATA_TROCA_DIA_PAGAMENTO = '2026-11-09';
 
 function isoDeData(d) {
@@ -1283,9 +1286,10 @@ function datasCobrancaLocacao(loc) {
   const datas = [];
   const d = new Date(`${loc.dataRetirada}T00:00:00`);
   const dFim = new Date(`${fim}T00:00:00`);
+  const dataTroca = loc.dataTrocaDiaPagamento || DATA_TROCA_DIA_PAGAMENTO;
   while (d <= dFim) {
     const iso = isoDeData(d);
-    const diaNome = (loc.diaPagamentoAnterior && iso < DATA_TROCA_DIA_PAGAMENTO) ? loc.diaPagamentoAnterior : loc.diaPagamento;
+    const diaNome = (loc.diaPagamentoAnterior && iso < dataTroca) ? loc.diaPagamentoAnterior : loc.diaPagamento;
     if (d.getDay() === (DIAS_SEMANA[diaNome] ?? 1)) datas.push(iso);
     d.setDate(d.getDate() + 1);
   }
