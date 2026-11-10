@@ -277,7 +277,13 @@ export function calcularProximaRevisao(veiculo, manutencao) {
     const kmRodados = kmUltimaRevisao - veiculo.kmInicial;
     if (dias > 0 && kmRodados > 0) {
       const mediaKmDia = kmRodados / dias;
-      dataPrevista = somarDiasISO(dataUltimaRevisao, Math.round(20000 / mediaKmDia));
+      const candidata = somarDiasISO(dataUltimaRevisao, Math.round(20000 / mediaKmDia));
+      // Só confia na projeção por km/dia se ela ainda não ficou muito velha (mais de 30 dias no
+      // passado): depois disso o ritmo usado (de quando foi a última revisão até o início de
+      // operação) deixou de refletir a realidade — por exemplo, o carro ficou parado ou trocou
+      // de motorista no meio do caminho — e cai de volta pra +1 ano, mais seguro nesse caso.
+      const hojeISO = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+      if (diasEntreISO(candidata, hojeISO) <= 30) dataPrevista = candidata;
     }
   }
   if (!dataPrevista) {
