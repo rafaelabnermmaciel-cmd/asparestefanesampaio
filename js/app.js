@@ -1312,12 +1312,26 @@ function aluguelPorMesDoVeiculo(veiculoId) {
       aluguelPorLocacao[loc.id] = (aluguelPorLocacao[loc.id] || 0) + Number(p.valor || 0);
     });
     const datasContrato = datasCobrancaLocacao(loc);
-    datasContrato.forEach((dataRef) => {
-      if (datasRegistradas.has(dataRef)) return;
-      const mes = dataRef.slice(0, 7);
-      aluguelPorMes[mes] = (aluguelPorMes[mes] || 0) + Number(loc.valorSemanal || 0);
-      aluguelPorLocacao[loc.id] = (aluguelPorLocacao[loc.id] || 0) + Number(loc.valorSemanal || 0);
-    });
+    const datasSemRegistro = datasContrato.filter((d) => !datasRegistradas.has(d));
+    // aluguelTotalReal: total já conferido por fora (acerto de caução, diárias retidas contando
+    // como aluguel, etc.) — quando existe, prevalece sobre o valor semanal cheio, distribuído
+    // pelas semanas sem pagamento lançado (as semanas já lançadas continuam valendo o que foi
+    // realmente registrado, nunca são substituídas).
+    if (loc.aluguelTotalReal != null && datasSemRegistro.length) {
+      const faltante = Math.max(0, Number(loc.aluguelTotalReal) - (aluguelPorLocacao[loc.id] || 0));
+      const valorPorSemana = faltante / datasSemRegistro.length;
+      datasSemRegistro.forEach((dataRef) => {
+        const mes = dataRef.slice(0, 7);
+        aluguelPorMes[mes] = (aluguelPorMes[mes] || 0) + valorPorSemana;
+        aluguelPorLocacao[loc.id] = (aluguelPorLocacao[loc.id] || 0) + valorPorSemana;
+      });
+    } else {
+      datasSemRegistro.forEach((dataRef) => {
+        const mes = dataRef.slice(0, 7);
+        aluguelPorMes[mes] = (aluguelPorMes[mes] || 0) + Number(loc.valorSemanal || 0);
+        aluguelPorLocacao[loc.id] = (aluguelPorLocacao[loc.id] || 0) + Number(loc.valorSemanal || 0);
+      });
+    }
     semanasPorLocacao[loc.id] = datasContrato.length;
   });
   return { aluguelPorMes, aluguelPorLocacao, semanasPorLocacao };

@@ -163,6 +163,9 @@ export const LOCACOES_SEED = [
     caucaoValor: 3000,
     caucaoStatus: 'parcial',
     observacoes: 'Da caução de R$3.000 prevista em contrato, só pagou R$1.357,00 (nunca completou o valor cheio). Na devolução, foram retidas as 5 diárias de 22 a 26/07 (R$1.071,43). Foram devolvidos R$285,57. Ainda falta receber R$458,25 de multa, que ele está pagando aos poucos em lavagens do carro.',
+    // Total conferido no Estudo de Rentabilidade (21/10/2026): 5 semanas pagas + as 5 diárias
+    // retidas da caução (22-26/07) contando como aluguel recebido.
+    aluguelTotalReal: 8464.43,
     status: 'encerrada',
   },
   {
@@ -176,6 +179,9 @@ export const LOCACOES_SEED = [
     caucaoValor: CAUCAO_PADRAO,
     caucaoStatus: 'parcial',
     observacoes: 'Caução de R$2.500 NÃO foi devolvida integralmente. Descontos: 2 diárias em atraso na devolução (09 e 13/10, R$428,57), multa (R$104,00), lavagem (R$120,00), pneu (R$399,00) e retrovisor (R$300,00) — total descontado R$1.351,57. Foram devolvidos R$1.148,43.',
+    // Total conferido no Estudo de Rentabilidade (21/10/2026): semanas pagas + as 2 diárias
+    // retidas da caução (09 e 13/10) contando como aluguel recebido.
+    aluguelTotalReal: 13866.07,
     status: 'encerrada',
   },
   {
