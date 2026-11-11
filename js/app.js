@@ -44,9 +44,14 @@ const state = {
   acessosPendentes: [],
 };
 
-// O link normal (index.html) exige login de todo mundo. O administrador (Rafael) acessa pelo
-// link com ?admin=1 uma vez — o dispositivo lembra disso (localStorage) e passa a abrir direto
-// com acesso total, sem precisar logar, nas próximas vezes.
+// O link normal (index.html) exige login de todo mundo. O administrador (Rafael) entra digitando
+// a senha de administrador no próprio portão (sem e-mail) — ou, como antes, abrindo o link com
+// ?admin=1 uma vez. De qualquer um dos dois jeitos o dispositivo lembra disso (localStorage) e
+// passa a abrir direto com acesso total, sem precisar logar, nas próximas vezes — isso também é
+// o que faz funcionar certo quando se fixa o app na tela inicial (o atalho guarda a própria
+// lembrança, já que a senha é digitada dentro dele mesmo).
+const SENHA_ADMINISTRADOR = 'rmveiculos';
+
 function dispositivoAdmin() {
   try { return localStorage.getItem('rm-veiculos-admin') === '1'; } catch (e) { return false; }
 }
@@ -1957,6 +1962,21 @@ function htmlGateLogin() {
       </div>
       <button type="submit" class="mt-1 w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">Entrar</button>
     </form>
+    <button type="button" id="gate-ir-admin" class="mt-4 block w-full text-center text-xs font-medium text-slate-400 hover:underline dark:text-slate-500">Sou administrador</button>
+  `;
+}
+
+function htmlGateAdmin() {
+  return `
+    <h2 class="mb-1 text-lg font-semibold text-slate-900 dark:text-white">Acesso do administrador</h2>
+    <p class="mb-4 text-xs text-slate-400">Só a senha, sem e-mail. Fica salvo neste aparelho (ou atalho).</p>
+    <form id="gate-form-admin" class="space-y-3">
+      <label class="block text-xs text-slate-500 dark:text-slate-400">Senha
+        <input required type="password" name="senha" autofocus class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+      </label>
+      <button type="submit" class="mt-1 w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">Entrar como administrador</button>
+    </form>
+    <button type="button" id="gate-ir-login-de-admin" class="mt-4 block w-full text-center text-xs font-medium text-slate-400 hover:underline dark:text-slate-500">Sou proprietário de veículo</button>
   `;
 }
 
@@ -1979,6 +1999,7 @@ function htmlGateCadastro() {
       </div>
       <button type="submit" class="mt-1 w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">Criar conta</button>
     </form>
+    <button type="button" id="gate-ir-admin" class="mt-4 block w-full text-center text-xs font-medium text-slate-400 hover:underline dark:text-slate-500">Sou administrador</button>
   `;
 }
 
@@ -1986,6 +2007,10 @@ function wireGateLogin() {
   qs('#gate-ir-cadastro').addEventListener('click', () => {
     qs('#gate-login-box').innerHTML = htmlGateCadastro();
     wireGateCadastro();
+  });
+  qs('#gate-ir-admin').addEventListener('click', () => {
+    qs('#gate-login-box').innerHTML = htmlGateAdmin();
+    wireGateAdmin();
   });
   qs('#gate-form-login').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -2006,6 +2031,10 @@ function wireGateCadastro() {
     qs('#gate-login-box').innerHTML = htmlGateLogin();
     wireGateLogin();
   });
+  qs('#gate-ir-admin').addEventListener('click', () => {
+    qs('#gate-login-box').innerHTML = htmlGateAdmin();
+    wireGateAdmin();
+  });
   qs('#gate-form-cadastro').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -2025,6 +2054,35 @@ function wireGateCadastro() {
       }
     }
   });
+}
+
+function wireGateAdmin() {
+  qs('#gate-ir-login-de-admin').addEventListener('click', () => {
+    qs('#gate-login-box').innerHTML = htmlGateLogin();
+    wireGateLogin();
+  });
+  qs('#gate-form-admin').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    if (fd.get('senha') !== SENHA_ADMINISTRADOR) {
+      toast('Senha incorreta.');
+      return;
+    }
+    ativarAcessoAdministrador();
+  });
+}
+
+// Entrar como administrador pela senha do portão (equivalente a abrir o link com ?admin=1):
+// grava a lembrança neste aparelho/atalho e já libera o acesso total, sem precisar logar.
+function ativarAcessoAdministrador() {
+  try { localStorage.setItem('rm-veiculos-admin', '1'); } catch (e) { /* localStorage indisponível */ }
+  if (firebaseConfigurado) {
+    ouvirAcessosPendentes((lista) => {
+      state.acessosPendentes = lista;
+      atualizarBotaoConta();
+    });
+  }
+  iniciarOuvintesConformeAuth();
 }
 
 function renderGateLogin() {
