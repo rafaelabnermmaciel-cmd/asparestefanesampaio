@@ -24,8 +24,8 @@ import {
   ouvirAcessosPendentes,
   aprovarAcesso,
   recusarAcesso,
-} from './firestore.js?v=4';
-import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js?v=4';
+} from './firestore.js?v=5';
+import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js?v=5';
 
 // ---------------------------------------------------------------------------------------------
 // Estado
@@ -1905,6 +1905,8 @@ function atualizarBotaoConta() {
     } else {
       label.textContent = 'Admin';
     }
+  } else if (dispositivoAdmin()) {
+    label.textContent = 'Admin';
   } else {
     label.textContent = 'Entrar';
   }
@@ -1953,11 +1955,12 @@ function wireAcessosPendentes() {
 }
 
 function abrirModalConta() {
-  if (state.auth.uid) {
+  const adminPorAparelho = !state.auth.uid && dispositivoAdmin();
+  if (state.auth.uid || adminPorAparelho) {
     const pendente = aguardandoAprovacao();
     const html = `
       <h2 class="mb-1 text-lg font-semibold text-slate-900 dark:text-white">Sua conta</h2>
-      <p class="mb-4 text-sm text-slate-500 dark:text-slate-400">${esc(state.auth.email)} · ${state.auth.perfil?.tipo === 'proprietario' ? `Proprietário${state.auth.perfil.placa ? ' · ' + esc(state.auth.perfil.placa) : ''}` : 'Administrador'}</p>
+      <p class="mb-4 text-sm text-slate-500 dark:text-slate-400">${adminPorAparelho ? 'Administrador (neste aparelho)' : `${esc(state.auth.email)} · ${state.auth.perfil?.tipo === 'proprietario' ? `Proprietário${state.auth.perfil.placa ? ' · ' + esc(state.auth.perfil.placa) : ''}` : 'Administrador'}`}</p>
       ${pendente ? `<p class="mb-4 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">Seu cadastro ainda está aguardando aprovação do administrador.</p>` : ''}
       ${souAdmin() ? `
         <h3 class="mb-2 mt-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Cadastros pendentes</h3>
@@ -1971,7 +1974,11 @@ function abrirModalConta() {
     abrirModal(html);
     qs('#btn-fechar-conta').addEventListener('click', fecharModal);
     qs('#btn-sair').addEventListener('click', async () => {
-      try { await fazerLogout(); toast('Você saiu.'); fecharModal(); } catch (e) { toast(e.message); }
+      try {
+        if (adminPorAparelho) { sairAdministrador(); } else { await fazerLogout(); }
+        toast('Você saiu.');
+        fecharModal();
+      } catch (e) { toast(e.message); }
     });
     wireAcessosPendentes();
   } else {
@@ -2208,11 +2215,20 @@ function wireGateAdmin() {
 function ativarAcessoAdministrador() {
   try { localStorage.setItem('rm-veiculos-admin', '1'); } catch (e) { /* localStorage indisponível */ }
   if (firebaseConfigurado) {
-    ouvirAcessosPendentes((lista) => {
+    pararOuvirAcessosPendentes = ouvirAcessosPendentes((lista) => {
       state.acessosPendentes = lista;
       atualizarBotaoConta();
     });
   }
+  iniciarOuvintesConformeAuth();
+}
+
+// Sair do acesso de administrador deste aparelho — só acontece se a pessoa apertar em "Sair";
+// um simples refresh da página nunca desloga ninguém (nem administrador, nem proprietário).
+function sairAdministrador() {
+  if (pararOuvirAcessosPendentes) { pararOuvirAcessosPendentes(); pararOuvirAcessosPendentes = null; }
+  try { localStorage.removeItem('rm-veiculos-admin'); } catch (e) { /* noop */ }
+  state.acessosPendentes = [];
   iniciarOuvintesConformeAuth();
 }
 
@@ -2291,6 +2307,7 @@ function iniciarOuvintesConformeAuth() {
 }
 
 let pararOuvirPerfil = null;
+let pararOuvirAcessosPendentes = null;
 
 function init() {
   initTema();
@@ -2318,7 +2335,7 @@ function init() {
 
   if (dispositivoAdmin()) {
     // Sempre ativo (mesmo sem login), pra avisar o administrador de cadastros novos à espera.
-    ouvirAcessosPendentes((lista) => {
+    pararOuvirAcessosPendentes = ouvirAcessosPendentes((lista) => {
       state.acessosPendentes = lista;
       atualizarBotaoConta();
     });
