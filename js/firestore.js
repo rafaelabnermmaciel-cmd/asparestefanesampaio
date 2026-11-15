@@ -22,8 +22,8 @@ import {
   signOut,
   createUserWithEmailAndPassword,
 } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
-import { firebaseConfig } from './firebase-config.js?v=6';
-import { VEICULOS_SEED, FINANCIAMENTOS_SEED, LOCACOES_SEED, MANUTENCOES_SEED } from './seed-data.js?v=6';
+import { firebaseConfig } from './firebase-config.js?v=7';
+import { VEICULOS_SEED, FINANCIAMENTOS_SEED, LOCACOES_SEED, MANUTENCOES_SEED } from './seed-data.js?v=7';
 
 export const firebaseConfigurado = !Object.values(firebaseConfig).some((v) => String(v).startsWith('COLE_AQUI'));
 
@@ -105,6 +105,16 @@ export async function aprovarAcesso(uid) {
 export async function recusarAcesso(uid) {
   checarDb();
   await deleteDoc(doc(db, 'usuarios', uid));
+}
+
+// Proprietários já aprovados (pra administrador poder remover o acesso de alguém depois, não só
+// recusar um cadastro pendente). Remover usa a mesma recusarAcesso — apaga o perfil; a conta de
+// login em si (Firebase Auth) continua existindo, mas sem perfil ela não enxerga dado nenhum.
+export function ouvirProprietariosAprovados(callback) {
+  checarDb();
+  return onSnapshot(query(collection(db, 'usuarios'), where('tipo', '==', 'proprietario'), where('status', '==', 'aprovado')), (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  });
 }
 
 const COL = {

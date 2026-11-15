@@ -24,8 +24,9 @@ import {
   ouvirAcessosPendentes,
   aprovarAcesso,
   recusarAcesso,
-} from './firestore.js?v=6';
-import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js?v=6';
+  ouvirProprietariosAprovados,
+} from './firestore.js?v=7';
+import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js?v=7';
 
 // ---------------------------------------------------------------------------------------------
 // Estado
@@ -42,6 +43,7 @@ const state = {
   auth: { uid: null, email: null, perfil: null },
   relatorioVeiculoId: '',
   acessosPendentes: [],
+  proprietariosAprovados: [],
 };
 
 // O link normal (index.html) exige login de todo mundo. O administrador (Rafael) entra digitando
@@ -57,7 +59,9 @@ function dispositivoAdmin() {
 }
 
 function souAdmin() {
-  return dispositivoAdmin() || (!!state.auth.uid && state.auth.perfil?.tipo !== 'proprietario');
+  // Exige um perfil carregado de verdade — sem isso, alguém cujo acesso foi removido (perfil
+  // apagado) enquanto ainda estava logado não pode cair aqui achando que é administrador.
+  return dispositivoAdmin() || (!!state.auth.uid && !!state.auth.perfil && state.auth.perfil.tipo !== 'proprietario');
 }
 
 function precisaGateLogin() {
@@ -1954,6 +1958,34 @@ function wireAcessosPendentes() {
   });
 }
 
+function htmlProprietariosAprovados() {
+  if (!state.proprietariosAprovados.length) {
+    return `<p class="text-xs text-slate-400">Nenhum proprietário com acesso aprovado ainda.</p>`;
+  }
+  return `
+    <div class="space-y-2">
+      ${state.proprietariosAprovados.map((p) => `
+        <div class="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900">
+          <div class="min-w-0">
+            <p class="truncate text-sm font-medium text-slate-900 dark:text-white">${esc(p.email)}</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Placa ${esc(p.placa)}</p>
+          </div>
+          <button type="button" data-remover-acesso="${p.id}" class="shrink-0 rounded-lg bg-rose-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-rose-500">Remover acesso</button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function wireProprietariosAprovados() {
+  document.querySelectorAll('[data-remover-acesso]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try { await recusarAcesso(btn.dataset.removerAcesso); toast('Acesso removido.'); } catch (e) { toast(e.message); btn.disabled = false; }
+    });
+  });
+}
+
 function abrirModalConta() {
   const adminPorAparelho = !state.auth.uid && dispositivoAdmin();
   if (state.auth.uid || adminPorAparelho) {
@@ -1965,6 +1997,8 @@ function abrirModalConta() {
       ${souAdmin() ? `
         <h3 class="mb-2 mt-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Cadastros pendentes</h3>
         ${htmlAcessosPendentes()}
+        <h3 class="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">Proprietários com acesso</h3>
+        ${htmlProprietariosAprovados()}
       ` : ''}
       <div class="flex justify-end gap-2 pt-4">
         <button type="button" id="btn-fechar-conta" class="rounded-xl px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Fechar</button>
@@ -1981,6 +2015,7 @@ function abrirModalConta() {
       } catch (e) { toast(e.message); }
     });
     wireAcessosPendentes();
+    wireProprietariosAprovados();
   } else {
     const htmlLogin = () => `
       <h2 class="mb-1 text-lg font-semibold text-slate-900 dark:text-white">Entrar</h2>
@@ -2243,6 +2278,9 @@ function ativarAcessoAdministrador() {
       state.acessosPendentes = lista;
       atualizarBotaoConta();
     });
+    pararOuvirProprietariosAprovados = ouvirProprietariosAprovados((lista) => {
+      state.proprietariosAprovados = lista;
+    });
   }
   iniciarOuvintesConformeAuth();
 }
@@ -2251,8 +2289,10 @@ function ativarAcessoAdministrador() {
 // um simples refresh da página nunca desloga ninguém (nem administrador, nem proprietário).
 function sairAdministrador() {
   if (pararOuvirAcessosPendentes) { pararOuvirAcessosPendentes(); pararOuvirAcessosPendentes = null; }
+  if (pararOuvirProprietariosAprovados) { pararOuvirProprietariosAprovados(); pararOuvirProprietariosAprovados = null; }
   try { localStorage.removeItem('rm-veiculos-admin'); } catch (e) { /* noop */ }
   state.acessosPendentes = [];
+  state.proprietariosAprovados = [];
   iniciarOuvintesConformeAuth();
 }
 
@@ -2308,6 +2348,14 @@ function iniciarOuvintesConformeAuth() {
   }
   esconderGateLogin();
 
+  // Uid autenticado mas sem perfil (conta sem cadastro de proprietário, ou acesso removido pelo
+  // administrador enquanto a pessoa ainda estava logada) — desloga, nunca trata como admin.
+  if (state.auth.uid && !dispositivoAdmin() && !state.auth.perfil) {
+    toast('Seu acesso foi removido.');
+    fazerLogout();
+    return;
+  }
+
   if (state.auth.perfil?.tipo === 'proprietario') {
     if (state.auth.perfil.status === 'aprovado') {
       const veiculoId = state.auth.perfil.veiculoId;
@@ -2332,6 +2380,7 @@ function iniciarOuvintesConformeAuth() {
 
 let pararOuvirPerfil = null;
 let pararOuvirAcessosPendentes = null;
+let pararOuvirProprietariosAprovados = null;
 
 function init() {
   initTema();
@@ -2362,6 +2411,9 @@ function init() {
     pararOuvirAcessosPendentes = ouvirAcessosPendentes((lista) => {
       state.acessosPendentes = lista;
       atualizarBotaoConta();
+    });
+    pararOuvirProprietariosAprovados = ouvirProprietariosAprovados((lista) => {
+      state.proprietariosAprovados = lista;
     });
   }
 
