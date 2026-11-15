@@ -205,6 +205,7 @@ export const LOCACOES_SEED = [
     diaPagamento: 'segunda',
     diaPagamentoAnterior: 'quinta',
     dataTrocaDiaPagamento: '2026-11-02', // trocou de dia uma semana antes da Luiza
+    primeiraCobrancaNaRetirada: true, // pagou a semana cheia já na retirada (15/10, quinta — mesmo dia do diaPagamentoAnterior, então na prática não muda nada aqui)
     caucaoValor: CAUCAO_PADRAO,
     caucaoStatus: 'recebida',
     multaRescisoria: 750,
@@ -238,6 +239,7 @@ export const LOCACOES_SEED = [
     diaPagamento: 'segunda',
     diaPagamentoAnterior: 'terca',
     dataTrocaDiaPagamento: '2026-11-02', // trocou de dia uma semana antes da Luiza
+    primeiraCobrancaNaRetirada: true, // pagou a semana cheia já na retirada (13/10, terça — mesmo dia do diaPagamentoAnterior, então na prática não muda nada aqui)
     caucaoValor: CAUCAO_PADRAO,
     caucaoStatus: 'recebida',
     multaRescisoria: 750,

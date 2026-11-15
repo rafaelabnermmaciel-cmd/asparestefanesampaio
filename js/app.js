@@ -25,8 +25,8 @@ import {
   aprovarAcesso,
   recusarAcesso,
   ouvirProprietariosAprovados,
-} from './firestore.js?v=10';
-import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js?v=10';
+} from './firestore.js?v=11';
+import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js?v=11';
 
 // ---------------------------------------------------------------------------------------------
 // Estado
@@ -997,6 +997,7 @@ function abrirModalLocacao(locacao = null) {
       status: fd.get('status'),
       observacoes: fd.get('observacoes') || '',
     };
+    if (!locacao) dados.primeiraCobrancaNaRetirada = true; // todo locatário novo paga a semana cheia já na retirada
     try {
       const arquivos = fd.getAll('contrato').filter((a) => a.size > 0);
       if (arquivos.length) {
