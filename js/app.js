@@ -24,8 +24,8 @@ import {
   ouvirAcessosPendentes,
   aprovarAcesso,
   recusarAcesso,
-} from './firestore.js?v=5';
-import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js?v=5';
+} from './firestore.js?v=6';
+import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js?v=6';
 
 // ---------------------------------------------------------------------------------------------
 // Estado
@@ -2084,9 +2084,34 @@ function abrirModalConta() {
 // Portão de acesso (tela cheia de login/cadastro pra quem abre o link sem ser o administrador)
 // ---------------------------------------------------------------------------------------------
 
-function htmlGateLogin() {
+// Primeira tela do portão: escolher entre proprietário e administrador, antes de qualquer
+// formulário de login — só depois dessa escolha é que aparece o campo certo pra cada um.
+function htmlGateEscolha() {
   return `
     <h2 class="mb-1 text-lg font-semibold text-slate-900 dark:text-white">Entrar</h2>
+    <p class="mb-5 text-xs text-slate-400">Como você vai entrar?</p>
+    <div class="space-y-2.5">
+      <button type="button" id="gate-escolha-proprietario" class="w-full rounded-xl border border-slate-200 px-4 py-3 text-left text-sm font-medium text-slate-700 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-800 dark:text-slate-200 dark:hover:border-indigo-700">Sou proprietário de veículo</button>
+      <button type="button" id="gate-escolha-admin" class="w-full rounded-xl border border-slate-200 px-4 py-3 text-left text-sm font-medium text-slate-700 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-800 dark:text-slate-200 dark:hover:border-indigo-700">Sou administrador</button>
+    </div>
+  `;
+}
+
+function wireGateEscolha() {
+  qs('#gate-escolha-proprietario').addEventListener('click', () => {
+    qs('#gate-login-box').innerHTML = htmlGateLogin();
+    wireGateLogin();
+  });
+  qs('#gate-escolha-admin').addEventListener('click', () => {
+    qs('#gate-login-box').innerHTML = htmlGateAdmin();
+    wireGateAdmin();
+  });
+}
+
+function htmlGateLogin() {
+  return `
+    <button type="button" id="gate-voltar" class="mb-3 text-xs font-medium text-slate-400 hover:underline dark:text-slate-500">← Voltar</button>
+    <h2 class="mb-1 text-lg font-semibold text-slate-900 dark:text-white">Entrar como proprietário</h2>
     <p class="mb-4 text-xs text-slate-400">Entre com o e-mail e senha do seu veículo.</p>
     <form id="gate-form-login" class="space-y-3">
       <label class="block text-xs text-slate-500 dark:text-slate-400">E-mail
@@ -2100,12 +2125,12 @@ function htmlGateLogin() {
       </div>
       <button type="submit" class="mt-1 w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">Entrar</button>
     </form>
-    <button type="button" id="gate-ir-admin" class="mt-4 block w-full text-center text-xs font-medium text-slate-400 hover:underline dark:text-slate-500">Sou administrador</button>
   `;
 }
 
 function htmlGateAdmin() {
   return `
+    <button type="button" id="gate-voltar" class="mb-3 text-xs font-medium text-slate-400 hover:underline dark:text-slate-500">← Voltar</button>
     <h2 class="mb-1 text-lg font-semibold text-slate-900 dark:text-white">Acesso do administrador</h2>
     <p class="mb-4 text-xs text-slate-400">Só a senha, sem e-mail. Fica salvo neste aparelho (ou atalho).</p>
     <form id="gate-form-admin" class="space-y-3">
@@ -2114,12 +2139,12 @@ function htmlGateAdmin() {
       </label>
       <button type="submit" class="mt-1 w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">Entrar como administrador</button>
     </form>
-    <button type="button" id="gate-ir-login-de-admin" class="mt-4 block w-full text-center text-xs font-medium text-slate-400 hover:underline dark:text-slate-500">Sou proprietário de veículo</button>
   `;
 }
 
 function htmlGateCadastro() {
   return `
+    <button type="button" id="gate-voltar" class="mb-3 text-xs font-medium text-slate-400 hover:underline dark:text-slate-500">← Voltar</button>
     <h2 class="mb-1 text-lg font-semibold text-slate-900 dark:text-white">Criar conta de proprietário</h2>
     <p class="mb-4 text-xs text-slate-400">Informe a placa do seu veículo — ela é usada pra achar seus dados. Seu acesso fica pendente até o administrador aprovar.</p>
     <form id="gate-form-cadastro" class="space-y-3">
@@ -2137,18 +2162,17 @@ function htmlGateCadastro() {
       </div>
       <button type="submit" class="mt-1 w-full rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-500">Criar conta</button>
     </form>
-    <button type="button" id="gate-ir-admin" class="mt-4 block w-full text-center text-xs font-medium text-slate-400 hover:underline dark:text-slate-500">Sou administrador</button>
   `;
 }
 
 function wireGateLogin() {
+  qs('#gate-voltar').addEventListener('click', () => {
+    qs('#gate-login-box').innerHTML = htmlGateEscolha();
+    wireGateEscolha();
+  });
   qs('#gate-ir-cadastro').addEventListener('click', () => {
     qs('#gate-login-box').innerHTML = htmlGateCadastro();
     wireGateCadastro();
-  });
-  qs('#gate-ir-admin').addEventListener('click', () => {
-    qs('#gate-login-box').innerHTML = htmlGateAdmin();
-    wireGateAdmin();
   });
   qs('#gate-form-login').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -2165,13 +2189,13 @@ function wireGateLogin() {
 }
 
 function wireGateCadastro() {
+  qs('#gate-voltar').addEventListener('click', () => {
+    qs('#gate-login-box').innerHTML = htmlGateEscolha();
+    wireGateEscolha();
+  });
   qs('#gate-ir-login').addEventListener('click', () => {
     qs('#gate-login-box').innerHTML = htmlGateLogin();
     wireGateLogin();
-  });
-  qs('#gate-ir-admin').addEventListener('click', () => {
-    qs('#gate-login-box').innerHTML = htmlGateAdmin();
-    wireGateAdmin();
   });
   qs('#gate-form-cadastro').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -2195,9 +2219,9 @@ function wireGateCadastro() {
 }
 
 function wireGateAdmin() {
-  qs('#gate-ir-login-de-admin').addEventListener('click', () => {
-    qs('#gate-login-box').innerHTML = htmlGateLogin();
-    wireGateLogin();
+  qs('#gate-voltar').addEventListener('click', () => {
+    qs('#gate-login-box').innerHTML = htmlGateEscolha();
+    wireGateEscolha();
   });
   qs('#gate-form-admin').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -2233,8 +2257,8 @@ function sairAdministrador() {
 }
 
 function renderGateLogin() {
-  qs('#gate-login-box').innerHTML = htmlGateLogin();
-  wireGateLogin();
+  qs('#gate-login-box').innerHTML = htmlGateEscolha();
+  wireGateEscolha();
 }
 
 function mostrarGateLogin() {
