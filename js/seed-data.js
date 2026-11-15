@@ -119,14 +119,16 @@ export const LOCACOES_SEED = [
     dataFim: '2026-08-05',
     valorSemanal: 1550,
     diaPagamento: 'quinta',
+    primeiraCobrancaNaRetirada: true, // pagou a semana cheia (R$1.550) já na retirada, 29/05 — já somado no aluguelTotalReal abaixo
     caucaoValor: 3000,
     caucaoStatus: 'retida',
     observacoes: 'Caução de R$3.000 retida integralmente. Mesmo assim ainda ficou devendo R$1.307,14 (R$807,14 de diárias em aberto + R$500,00 de orçamento de polimento/reparo).',
     // Aluguel contratual do período (10 semanas × R$1.550 = R$15.500) menos os R$807,14 de
     // diárias que ficaram em aberto e nunca foram recebidas (nem com a caução, que foi toda
-    // usada e ainda assim não cobriu tudo). Os R$500 de polimento/reparo em aberto não entram
+    // usada e ainda assim não cobriu tudo), mais R$1.550 da semana cheia paga na retirada (29/05),
+    // que não tinha entrado nessa conta antes. Os R$500 de polimento/reparo em aberto não entram
     // aqui — não são aluguel, e também nunca foram recebidos.
-    aluguelTotalReal: 14692.86,
+    aluguelTotalReal: 16242.86,
     status: 'encerrada',
   },
   {
@@ -169,12 +171,14 @@ export const LOCACOES_SEED = [
     dataFim: '2026-07-27',
     valorSemanal: VALOR_SEMANAL_PADRAO,
     diaPagamento: 'quarta',
+    primeiraCobrancaNaRetirada: true, // pagou a semana cheia (R$1.500) já na retirada, 16/06 — já somado no aluguelTotalReal abaixo
     caucaoValor: 3000,
     caucaoStatus: 'parcial',
     observacoes: 'Da caução de R$3.000 prevista em contrato, só pagou R$1.357,00 (nunca completou o valor cheio). Na devolução, foram retidas as 5 diárias de 22 a 26/07 (R$1.071,43). Foram devolvidos R$285,57. Ainda falta receber R$458,25 de multa, que ele está pagando aos poucos em lavagens do carro.',
     // Total conferido no Estudo de Rentabilidade (21/10/2026): 5 semanas pagas + as 5 diárias
-    // retidas da caução (22-26/07) contando como aluguel recebido.
-    aluguelTotalReal: 8464.43,
+    // retidas da caução (22-26/07) contando como aluguel recebido, mais R$1.500 da semana cheia
+    // paga na retirada (16/06), que o estudo original não tinha contado.
+    aluguelTotalReal: 9964.43,
     status: 'encerrada',
   },
   {
@@ -185,12 +189,14 @@ export const LOCACOES_SEED = [
     dataFim: '2026-10-14',
     valorSemanal: VALOR_SEMANAL_PADRAO,
     diaPagamento: 'terca',
+    primeiraCobrancaNaRetirada: true, // pagou a semana cheia (R$1.500) já na retirada, 05/08 — já somado no aluguelTotalReal abaixo
     caucaoValor: CAUCAO_PADRAO,
     caucaoStatus: 'parcial',
     observacoes: 'Caução de R$2.500 NÃO foi devolvida integralmente. Descontos: 2 diárias em atraso na devolução (09 e 13/10, R$428,57), multa (R$104,00), lavagem (R$120,00), pneu (R$399,00) e retrovisor (R$300,00) — total descontado R$1.351,57. Foram devolvidos R$1.148,43.',
     // Total conferido no Estudo de Rentabilidade (21/10/2026): semanas pagas + as 2 diárias
-    // retidas da caução (09 e 13/10) contando como aluguel recebido.
-    aluguelTotalReal: 13866.07,
+    // retidas da caução (09 e 13/10) contando como aluguel recebido, mais R$1.500 da semana cheia
+    // paga na retirada (05/08), que o estudo original não tinha contado.
+    aluguelTotalReal: 15366.07,
     status: 'encerrada',
   },
   {
