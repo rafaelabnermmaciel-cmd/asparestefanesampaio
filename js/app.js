@@ -1442,6 +1442,32 @@ function aluguelPorMesDoVeiculo(veiculoId) {
   return { aluguelPorMes, aluguelPorLocacao, semanasPorLocacao };
 }
 
+const CORES_OCUPACAO = ['bg-blue-700', 'bg-teal-600', 'bg-indigo-600', 'bg-purple-600', 'bg-cyan-700', 'bg-sky-700'];
+
+// Linha do tempo de ocupação do veículo (pro relatório impresso): cada locação vira um bloco
+// colorido proporcional aos dias que durou, com blocos cinza ("parado") nos intervalos sem
+// locatário — tudo com base só no histórico real (sem projeção de datas futuras).
+function segmentosOcupacao(linhasContratos, inicio, fim) {
+  const totalDias = Math.max(1, diffDiasISO(inicio, fim));
+  const segmentos = [];
+  let cursor = inicio;
+  let corIdx = 0;
+  linhasContratos.forEach((c) => {
+    if (!c.retirada) return;
+    if (c.retirada > cursor) {
+      segmentos.push({ tipo: 'parado', dias: diffDiasISO(cursor, c.retirada) });
+      cursor = c.retirada;
+    }
+    const fimSegmento = c.ativa ? fim : (c.devolucao && c.devolucao < fim ? c.devolucao : fim);
+    const dias = Math.max(1, diffDiasISO(cursor, fimSegmento));
+    segmentos.push({ tipo: 'locatario', nome: c.nome, dias, cor: CORES_OCUPACAO[corIdx % CORES_OCUPACAO.length] });
+    corIdx++;
+    cursor = fimSegmento;
+  });
+  if (cursor < fim) segmentos.push({ tipo: 'parado', dias: diffDiasISO(cursor, fim) });
+  return segmentos.map((s) => ({ ...s, pct: (s.dias / totalDias) * 100 }));
+}
+
 function renderRelatorio() {
   const container = qs('#page-relatorio');
   const veiculoId = souAdmin() ? state.relatorioVeiculoId : state.auth.perfil?.veiculoId;
@@ -1509,6 +1535,16 @@ function renderRelatorio() {
       aluguel: aluguelPorLocacao[loc.id] || 0,
     };
   });
+
+  const hoje = hojeISO();
+  const segmentos = segmentosOcupacao(linhasContratos, inicio, hoje);
+  const nomeGasto = ehAdministracao ? 'Administração' : 'Financiamento';
+  const maxValorMes = Math.max(1, ...linhas.map((l) => Math.max(l.aluguel, ehAdministracao ? l.administracao : l.parcela, l.manutencao + l.protecao)));
+  const pctSobreInvestido = v.valorCompra ? (totLiquido / v.valorCompra) * 100 : null;
+  const resumoTexto = `${esc(v.placa)} está em operação desde ${formatDateBR(inicio)} (${meses.length} ${meses.length === 1 ? 'mês' : 'meses'}). `
+    + `Nesse período passaram ${linhasContratos.length} ${linhasContratos.length === 1 ? 'locatário' : 'locatários'} pelo carro, e o aluguel bruto recebido somou ${formatMoeda(totAluguel)}. `
+    + `Descontando ${nomeGasto.toLowerCase()}, manutenção e proteção veicular (${formatMoeda(totAdmin + totManut + totParcela + totProtecao)} no total), o lucro líquido até hoje é de ${formatMoeda(totLiquido)}`
+    + (pctSobreInvestido != null ? `, o equivalente a ${pctSobreInvestido.toFixed(1).replace('.', ',')}% do valor investido na compra (${formatMoeda(v.valorCompra)}).` : '.');
 
   container.innerHTML = `
     <div class="print:hidden">
@@ -1620,85 +1656,151 @@ function renderRelatorio() {
       </div>
     </div>
 
-    <!-- Versão limpa só pra impressão/PDF (sempre clara, sem menu/botões) -->
+    <!-- Versão limpa só pra impressão/PDF (sempre clara, sem menu/botões), no estilo do "Estudo de rentabilidade" -->
     <div class="hidden print:block text-black">
-      <div class="mb-6 flex items-start justify-between border-b-2 border-slate-800 pb-4">
+      <div class="flex items-center justify-between bg-slate-900 px-5 py-4 text-white">
         <div>
-          <h1 class="text-xl font-bold">Relatório de Rentabilidade</h1>
-          <p class="text-sm text-slate-700">${esc(v.placa)} · ${esc(v.modelo)} · Proprietário: ${esc(v.proprietarioNome)}</p>
+          <p class="text-base font-bold leading-tight tracking-tight">RM VEÍCULOS</p>
+          <p class="text-[10px] text-slate-300">Gestão de veículos para motoristas de aplicativo</p>
         </div>
-        <div class="text-right text-xs text-slate-500">
-          <p>Desde ${formatDateBR(inicio)}</p>
-          <p>Gerado em ${formatDateBR(hojeISO())}</p>
+        <div class="text-right">
+          <p class="text-sm font-semibold leading-tight">Relatório de rentabilidade</p>
+          <p class="text-[10px] text-slate-300">${esc(v.modelo)} · ${esc(v.placa)} · posição em ${formatDateBR(hoje)}</p>
         </div>
       </div>
+      <div class="h-1 bg-orange-500"></div>
 
-      <h2 class="mb-2 text-sm font-bold uppercase tracking-wide">Contratos</h2>
-      <table class="mb-6 w-full border-collapse text-sm">
-        <thead>
-          <tr class="border-b-2 border-slate-800">
-            <th class="py-2 text-left">Locatário</th>
-            <th class="py-2 text-left">Retirada</th>
-            <th class="py-2 text-left">Devolução</th>
-            <th class="py-2 pr-6 text-right">Semanas</th>
-            <th class="py-2 text-left">Caução</th>
-            <th class="py-2 text-right">Aluguel</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${linhasContratos.map((c) => `
-            <tr class="border-b border-slate-300">
-              <td class="py-1.5">${esc(c.nome)}</td>
-              <td class="py-1.5">${formatDateBR(c.retirada)}</td>
-              <td class="py-1.5">${c.ativa ? `(contrato até) ${formatDateBR(c.devolucao)}` : formatDateBR(c.devolucao)}</td>
-              <td class="py-1.5 pr-6 text-right">${c.semanas}</td>
-              <td class="py-1.5">${c.caucaoTexto}</td>
-              <td class="py-1.5 text-right font-semibold">${formatMoeda(c.aluguel)}</td>
-            </tr>`).join('')}
-        </tbody>
-      </table>
+      <div class="px-0.5 pt-5">
+        <h1 class="mb-1 text-xl font-bold text-slate-900">Relatório de rentabilidade do veículo</h1>
+        <p class="mb-4 text-xs text-slate-500">Histórico real das locações e resultado financeiro desde o início da operação.</p>
 
-      <h2 class="mb-2 text-sm font-bold uppercase tracking-wide">Mês a mês</h2>
-      <table class="w-full border-collapse text-sm">
-        <thead>
-          <tr class="border-b-2 border-slate-800">
-            <th class="py-2 text-left">Mês</th>
-            <th class="py-2 text-right">Aluguel</th>
-            <th class="py-2 text-right">${ehAdministracao ? 'Administração' : 'Financiamento'}</th>
-            <th class="py-2 text-right">Manutenção</th>
-            <th class="py-2 text-right">Proteção</th>
-            <th class="py-2 text-right">Líquido</th>
-          </tr>
-        </thead>
-        <tbody>
+        <div class="mb-5 grid grid-cols-2 gap-x-6 gap-y-2.5 border-l-4 border-orange-500 bg-slate-50 p-3 text-xs break-inside-avoid">
+          <div><span class="text-slate-400">Veículo</span><br /><span class="font-semibold">${esc(v.modelo)} · ${esc(v.cor)}</span></div>
+          <div><span class="text-slate-400">Placa / Renavam</span><br /><span class="font-semibold">${esc(v.placa)} · ${esc(v.renavam || '—')}</span></div>
+          <div><span class="text-slate-400">Proprietário</span><br /><span class="font-semibold">${esc(v.proprietarioNome)}</span></div>
+          <div><span class="text-slate-400">${ehAdministracao ? 'Administração' : 'Tipo'}</span><br /><span class="font-semibold">${ehAdministracao ? 'Rafael Abner Machado Maciel · RM Veículos' : 'Veículo próprio'}</span></div>
+          <div><span class="text-slate-400">Início da operação</span><br /><span class="font-semibold">${formatDateBR(inicio)}</span></div>
+          <div><span class="text-slate-400">Data do relatório</span><br /><span class="font-semibold">${formatDateBR(hoje)}</span></div>
+        </div>
+
+        <div class="mb-5 grid grid-cols-4 gap-3 break-inside-avoid">
+          <div class="rounded border border-slate-200 p-2.5">
+            <p class="text-[10px] text-slate-400">Valor investido</p>
+            <p class="text-sm font-bold text-slate-900">${v.valorCompra ? formatMoeda(v.valorCompra) : '—'}</p>
+          </div>
+          <div class="rounded border border-slate-200 p-2.5">
+            <p class="text-[10px] text-slate-400">Aluguel recebido (bruto)</p>
+            <p class="text-sm font-bold text-slate-900">${formatMoeda(totAluguel)}</p>
+          </div>
+          <div class="rounded border border-slate-200 p-2.5">
+            <p class="text-[10px] text-slate-400">Gastos</p>
+            <p class="text-sm font-bold text-rose-600">-${formatMoeda(totAdmin + totManut + totParcela + totProtecao)}</p>
+          </div>
+          <div class="rounded border border-emerald-300 bg-emerald-50 p-2.5">
+            <p class="text-[10px] text-emerald-700">Lucro líquido</p>
+            <p class="text-sm font-bold text-emerald-700">${formatMoeda(totLiquido)}</p>
+          </div>
+        </div>
+
+        <h2 class="mb-1.5 text-sm font-bold uppercase tracking-wide text-slate-800">Resumo</h2>
+        <p class="mb-5 text-xs leading-relaxed text-slate-700">${resumoTexto}</p>
+
+        <h2 class="mb-2 text-sm font-bold uppercase tracking-wide text-slate-800">Ocupação do carro</h2>
+        <div class="mb-1 flex h-7 overflow-hidden rounded border border-slate-200 text-[10px] text-white break-inside-avoid">
+          ${segmentos.map((s) => s.tipo === 'locatario'
+            ? `<div style="flex-grow:${Math.max(s.pct, 0.5)}" class="flex items-center justify-center overflow-hidden whitespace-nowrap px-1 ${s.cor}" title="${esc(s.nome)}">${esc(s.nome)}</div>`
+            : `<div style="flex-grow:${Math.max(s.pct, 0.5)}" class="flex items-center justify-center bg-slate-200 text-slate-400"></div>`
+          ).join('')}
+        </div>
+        <p class="mb-5 text-[10px] text-slate-400">De ${formatDateBR(inicio)} até ${formatDateBR(hoje)} · cinza = carro parado, sem locatário</p>
+
+        <h2 class="mb-2 text-sm font-bold uppercase tracking-wide text-slate-800">Contratos</h2>
+        <table class="mb-6 w-full border-collapse text-sm break-inside-avoid">
+          <thead>
+            <tr class="bg-slate-900 text-white">
+              <th class="px-2 py-2 text-left font-semibold">Locatário</th>
+              <th class="px-2 py-2 text-left font-semibold">Retirada</th>
+              <th class="px-2 py-2 text-left font-semibold">Devolução</th>
+              <th class="px-2 py-2 text-right font-semibold">Semanas</th>
+              <th class="px-2 py-2 text-left font-semibold">Caução</th>
+              <th class="px-2 py-2 text-right font-semibold">Aluguel</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${linhasContratos.map((c, i) => `
+              <tr class="border-b border-slate-200 ${i % 2 === 1 ? 'bg-slate-50' : ''}">
+                <td class="px-2 py-1.5">${esc(c.nome)}</td>
+                <td class="px-2 py-1.5">${formatDateBR(c.retirada)}</td>
+                <td class="px-2 py-1.5">${c.ativa ? `(contrato até) ${formatDateBR(c.devolucao)}` : formatDateBR(c.devolucao)}</td>
+                <td class="px-2 py-1.5 text-right">${c.semanas}</td>
+                <td class="px-2 py-1.5">${c.caucaoTexto}</td>
+                <td class="px-2 py-1.5 text-right font-semibold">${formatMoeda(c.aluguel)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+
+        <h2 class="mb-2 text-sm font-bold uppercase tracking-wide text-slate-800">Entradas e saídas por mês</h2>
+        <div class="mb-1 flex items-end gap-2 border-b border-slate-300 pb-0" style="height:90px">
           ${linhas.map((l) => `
-            <tr class="border-b border-slate-300">
-              <td class="py-1.5">${nomeMes(l.mes)}</td>
-              <td class="py-1.5 text-right">${formatMoeda(l.aluguel)}</td>
-              <td class="py-1.5 text-right">${formatMoeda(ehAdministracao ? l.administracao : l.parcela)}</td>
-              <td class="py-1.5 text-right">${formatMoeda(l.manutencao)}</td>
-              <td class="py-1.5 text-right">${formatMoeda(l.protecao)}</td>
-              <td class="py-1.5 text-right font-semibold">${formatMoeda(l.liquido)}</td>
-            </tr>`).join('')}
-        </tbody>
-        <tfoot>
-          <tr class="border-t-2 border-slate-800 font-bold">
-            <td class="py-2">Total</td>
-            <td class="py-2 text-right">${formatMoeda(totAluguel)}</td>
-            <td class="py-2 text-right">${formatMoeda(ehAdministracao ? totAdmin : totParcela)}</td>
-            <td class="py-2 text-right">${formatMoeda(totManut)}</td>
-            <td class="py-2 text-right">${formatMoeda(totProtecao)}</td>
-            <td class="py-2 text-right">${formatMoeda(totLiquido)}</td>
-          </tr>
-        </tfoot>
-      </table>
+            <div class="flex flex-1 flex-col items-center justify-end gap-0.5" style="height:100%">
+              <div class="flex items-end gap-0.5" style="height:70px">
+                <div style="height:${Math.max(2, (l.aluguel / maxValorMes) * 70)}px" class="w-2 rounded-t bg-blue-700" title="Aluguel"></div>
+                <div style="height:${Math.max(2, ((ehAdministracao ? l.administracao : l.parcela) / maxValorMes) * 70)}px" class="w-2 rounded-t bg-orange-500" title="${nomeGasto}"></div>
+                <div style="height:${Math.max(2, ((l.manutencao + l.protecao) / maxValorMes) * 70)}px" class="w-2 rounded-t bg-rose-500" title="Gastos"></div>
+              </div>
+            </div>`).join('')}
+        </div>
+        <div class="mb-1 flex gap-2">
+          ${linhas.map((l) => `<p class="flex-1 text-center text-[9px] text-slate-400">${nomeMes(l.mes)}</p>`).join('')}
+        </div>
+        <div class="mb-5 flex gap-4 text-[10px] text-slate-500">
+          <span class="inline-flex items-center gap-1"><span class="inline-block h-2 w-2 rounded-sm bg-blue-700"></span> Aluguel</span>
+          <span class="inline-flex items-center gap-1"><span class="inline-block h-2 w-2 rounded-sm bg-orange-500"></span> ${nomeGasto}</span>
+          <span class="inline-flex items-center gap-1"><span class="inline-block h-2 w-2 rounded-sm bg-rose-500"></span> Manutenção + proteção</span>
+        </div>
 
-      <div class="mt-6 flex flex-wrap gap-x-8 gap-y-1 text-sm">
-        <p><span class="text-slate-500">Aluguel recebido (total):</span> <strong>${formatMoeda(totAluguel)}</strong></p>
-        <p><span class="text-slate-500">Gastos:</span> <strong>-${formatMoeda(totAdmin + totManut + totParcela + totProtecao)}</strong></p>
-        <p><span class="text-slate-500">Líquido desde o início:</span> <strong>${formatMoeda(totLiquido)}</strong></p>
+        <h2 class="mb-2 text-sm font-bold uppercase tracking-wide text-slate-800">Mês a mês</h2>
+        <table class="w-full border-collapse text-sm break-inside-avoid">
+          <thead>
+            <tr class="bg-slate-900 text-white">
+              <th class="px-2 py-2 text-left font-semibold">Mês</th>
+              <th class="px-2 py-2 text-right font-semibold">Aluguel</th>
+              <th class="px-2 py-2 text-right font-semibold">${nomeGasto}</th>
+              <th class="px-2 py-2 text-right font-semibold">Manutenção</th>
+              <th class="px-2 py-2 text-right font-semibold">Proteção</th>
+              <th class="px-2 py-2 text-right font-semibold">Líquido</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${linhas.map((l, i) => `
+              <tr class="border-b border-slate-200 ${i % 2 === 1 ? 'bg-slate-50' : ''}">
+                <td class="px-2 py-1.5">${nomeMes(l.mes)}</td>
+                <td class="px-2 py-1.5 text-right">${formatMoeda(l.aluguel)}</td>
+                <td class="px-2 py-1.5 text-right">${formatMoeda(ehAdministracao ? l.administracao : l.parcela)}</td>
+                <td class="px-2 py-1.5 text-right">${formatMoeda(l.manutencao)}</td>
+                <td class="px-2 py-1.5 text-right">${formatMoeda(l.protecao)}</td>
+                <td class="px-2 py-1.5 text-right font-semibold">${formatMoeda(l.liquido)}</td>
+              </tr>`).join('')}
+          </tbody>
+          <tfoot>
+            <tr class="border-t-2 border-slate-800 font-bold">
+              <td class="px-2 py-2">Total</td>
+              <td class="px-2 py-2 text-right">${formatMoeda(totAluguel)}</td>
+              <td class="px-2 py-2 text-right">${formatMoeda(ehAdministracao ? totAdmin : totParcela)}</td>
+              <td class="px-2 py-2 text-right">${formatMoeda(totManut)}</td>
+              <td class="px-2 py-2 text-right">${formatMoeda(totProtecao)}</td>
+              <td class="px-2 py-2 text-right">${formatMoeda(totLiquido)}</td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <p class="mt-4 text-[10px] text-slate-400">Semana sem pagamento lançado no app conta pelo valor combinado em contrato; mês sem locatário não conta aluguel nem ${nomeGasto.toLowerCase()}.</p>
       </div>
-      <p class="mt-4 text-[10px] text-slate-400">Semana sem pagamento lançado no app conta pelo valor combinado em contrato; mês sem locatário não conta aluguel nem ${ehAdministracao ? 'administração' : 'parcela'}. · RM Veículos</p>
+
+      <div class="mt-6 flex items-center justify-between border-t-2 border-orange-500 pt-2 text-[9px] text-slate-400">
+        <p>RM VEÍCULOS · Gestão de veículos para motoristas de aplicativo</p>
+        <p>${ehAdministracao ? `Administração: Rafael Abner Machado Maciel · Proprietário: ${esc(v.proprietarioNome)}` : `Proprietário: ${esc(v.proprietarioNome)}`}</p>
+      </div>
     </div>
   `;
   atualizarIcones();
