@@ -24,8 +24,8 @@ import {
   ouvirAcessosPendentes,
   aprovarAcesso,
   recusarAcesso,
-} from './firestore.js';
-import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js';
+} from './firestore.js?v=4';
+import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js?v=4';
 
 // ---------------------------------------------------------------------------------------------
 // Estado

@@ -22,8 +22,8 @@ import {
   signOut,
   createUserWithEmailAndPassword,
 } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
-import { firebaseConfig } from './firebase-config.js';
-import { VEICULOS_SEED, FINANCIAMENTOS_SEED, LOCACOES_SEED, MANUTENCOES_SEED } from './seed-data.js';
+import { firebaseConfig } from './firebase-config.js?v=4';
+import { VEICULOS_SEED, FINANCIAMENTOS_SEED, LOCACOES_SEED, MANUTENCOES_SEED } from './seed-data.js?v=4';
 
 export const firebaseConfigurado = !Object.values(firebaseConfig).some((v) => String(v).startsWith('COLE_AQUI'));
 
