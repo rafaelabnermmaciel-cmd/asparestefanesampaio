@@ -139,6 +139,7 @@ export const LOCACOES_SEED = [
     dataFim: '2026-10-19',
     valorSemanal: 1500,
     diaPagamento: 'quinta',
+    primeiraCobrancaNaRetirada: true, // pagou a semana cheia já na retirada (06/08, que por coincidência já é quinta — não muda o total)
     caucaoValor: CAUCAO_PADRAO,
     caucaoStatus: 'parcial',
     observacoes: 'Caução de R$2.500: reteve R$1.500 (4 diárias e meia em atraso + R$200 de atraso = aluguel; R$100 de pneu + o resto de polimento = gastos) e devolveu R$1.000. Ainda falta acertar R$150 (metade do conserto do carregador portátil, que quebrou enquanto estava com ele — ele não pagou).',
@@ -228,6 +229,7 @@ export const LOCACOES_SEED = [
     dataFim: '2026-08-29',
     valorSemanal: VALOR_SEMANAL_PADRAO,
     diaPagamento: 'segunda',
+    primeiraCobrancaNaRetirada: true, // pagou a semana cheia já na retirada (27/04, que por coincidência já é segunda — não muda o total)
     caucaoValor: null,
     caucaoStatus: '',
     observacoes: 'Depois dele o carro ficou 45 dias parado (sem locatário) até o Herbert assumir em 13/10/2026.',
