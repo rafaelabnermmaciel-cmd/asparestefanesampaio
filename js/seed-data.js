@@ -119,16 +119,15 @@ export const LOCACOES_SEED = [
     dataFim: '2026-08-05',
     valorSemanal: 1550,
     diaPagamento: 'quinta',
-    primeiraCobrancaNaRetirada: true, // pagou a semana cheia (R$1.550) já na retirada, 29/05 — já somado no aluguelTotalReal abaixo
+    primeiraCobrancaNaRetirada: true, // pagou a semana cheia já na retirada (29/05) — já contada como a 1ª das "10 semanas" abaixo, não é extra
     caucaoValor: 3000,
     caucaoStatus: 'retida',
     observacoes: 'Caução de R$3.000 retida integralmente. Mesmo assim ainda ficou devendo R$1.307,14 (R$807,14 de diárias em aberto + R$500,00 de orçamento de polimento/reparo).',
-    // Aluguel contratual do período (10 semanas × R$1.550 = R$15.500) menos os R$807,14 de
-    // diárias que ficaram em aberto e nunca foram recebidas (nem com a caução, que foi toda
-    // usada e ainda assim não cobriu tudo), mais R$1.550 da semana cheia paga na retirada (29/05),
-    // que não tinha entrado nessa conta antes. Os R$500 de polimento/reparo em aberto não entram
-    // aqui — não são aluguel, e também nunca foram recebidos.
-    aluguelTotalReal: 16242.86,
+    // Aluguel contratual do período (10 semanas × R$1.550 = R$15.500, já contando a retirada
+    // 29/05 como a 1ª semana) menos os R$807,14 de diárias que ficaram em aberto e nunca foram
+    // recebidas (nem com a caução, que foi toda usada e ainda assim não cobriu tudo). Os R$500 de
+    // polimento/reparo em aberto não entram aqui — não são aluguel, e também nunca foram recebidos.
+    aluguelTotalReal: 14692.86,
     status: 'encerrada',
   },
   {
