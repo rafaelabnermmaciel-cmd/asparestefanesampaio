@@ -153,6 +153,7 @@ export const LOCACOES_SEED = [
     valorSemanal: VALOR_SEMANAL_PADRAO,
     diaPagamento: 'segunda',
     diaPagamentoAnterior: 'quinta',
+    primeiraCobrancaNaRetirada: true, // pagou a semana cheia já na retirada (28/10); o ciclo regular de quinta só recomeça depois dessa semana
     caucaoValor: CAUCAO_PADRAO,
     caucaoStatus: 'recebida',
     multaRescisoria: 750,

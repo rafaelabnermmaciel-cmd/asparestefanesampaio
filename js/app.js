@@ -25,8 +25,8 @@ import {
   aprovarAcesso,
   recusarAcesso,
   ouvirProprietariosAprovados,
-} from './firestore.js?v=9';
-import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js?v=9';
+} from './firestore.js?v=10';
+import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js?v=10';
 
 // ---------------------------------------------------------------------------------------------
 // Estado
@@ -1385,12 +1385,35 @@ function datasCobrancaEntre(loc, inicio, fim) {
   return datas;
 }
 
+// Datas de cobrança dentro de [inicio, fim], considerando que algumas locações cobram uma
+// semana cheia já na retirada (primeiraCobrancaNaRetirada): nesses casos a retirada sempre entra
+// como data de cobrança (não importa o dia da semana) e o ciclo regular só recomeça 7 dias depois
+// — a primeira ocorrência do dia de pagamento dentro dessa semana já paga não conta de novo.
+function datasCobrancaComRetirada(loc, inicio, fim) {
+  if (!inicio || inicio > fim) return [];
+  if (loc.primeiraCobrancaNaRetirada && loc.dataRetirada) {
+    const inicioCiclo = somarDiasISO(loc.dataRetirada, 7);
+    const datas = [];
+    if (loc.dataRetirada >= inicio && loc.dataRetirada <= fim) datas.push(loc.dataRetirada);
+    const inicioLoop = inicioCiclo > inicio ? inicioCiclo : inicio;
+    datas.push(...datasCobrancaEntre(loc, inicioLoop, fim));
+    return datas;
+  }
+  return datasCobrancaEntre(loc, inicio, fim);
+}
+
+function somarDiasISO(iso, dias) {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + dias);
+  return isoDeData(d);
+}
+
 // Todas as datas de cobrança de uma locação, do início até o fim efetivo — é o que dá pra
 // reconstruir o aluguel desde o início de cada contrato, mesmo pras semanas de locatários antigos
 // que nunca tiveram pagamento lançado no app. Nunca passa de hoje (não projeta cobrança futura).
 function datasCobrancaLocacao(loc) {
   if (!loc.dataRetirada) return [];
-  return datasCobrancaEntre(loc, loc.dataRetirada, fimEfetivoLocacao(loc));
+  return datasCobrancaComRetirada(loc, loc.dataRetirada, fimEfetivoLocacao(loc));
 }
 
 // Datas de cobrança de uma locação dentro de um mês 'AAAA-MM' inteiro — ao contrário de
@@ -1405,7 +1428,7 @@ function datasCobrancaNoMes(loc, mesAtual) {
   const limiteSuperior = loc.status === 'encerrada' ? (loc.dataFimReal || loc.dataFim || fimMes) : fimMes;
   const inicio = loc.dataRetirada > inicioMes ? loc.dataRetirada : inicioMes;
   const fim = limiteSuperior < fimMes ? limiteSuperior : fimMes;
-  return datasCobrancaEntre(loc, inicio, fim);
+  return datasCobrancaComRetirada(loc, inicio, fim);
 }
 
 // Aluguel de cada mês, somando TODOS os contratos (ativos e já encerrados) desde o início da
