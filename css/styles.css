@@ -5,8 +5,11 @@ html { scroll-behavior: smooth; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
 .dark ::-webkit-scrollbar-thumb { background: #334155; }
 
+/* 16px (ou mais) impede o zoom automático que o Safari do iPhone dá ao focar um campo com fonte
+   menor que essa — é a causa do "zoom quando entra com login e senha" em todas as telas. */
 input, select, textarea {
   font-family: inherit;
+  font-size: 16px;
 }
 
 .badge {
