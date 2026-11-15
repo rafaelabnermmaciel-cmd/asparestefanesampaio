@@ -1538,13 +1538,19 @@ function renderRelatorio() {
 
   const hoje = hojeISO();
   const segmentos = segmentosOcupacao(linhasContratos, inicio, hoje);
+  const diasParado = segmentos.filter((s) => s.tipo === 'parado').reduce((s, seg) => s + seg.dias, 0);
   const nomeGasto = ehAdministracao ? 'Administração' : 'Financiamento';
   const maxValorMes = Math.max(1, ...linhas.map((l) => Math.max(l.aluguel, ehAdministracao ? l.administracao : l.parcela, l.manutencao + l.protecao)));
   const pctSobreInvestido = v.valorCompra ? (totLiquido / v.valorCompra) * 100 : null;
   const resumoTexto = `${esc(v.placa)} está em operação desde ${formatDateBR(inicio)} (${meses.length} ${meses.length === 1 ? 'mês' : 'meses'}). `
-    + `Nesse período passaram ${linhasContratos.length} ${linhasContratos.length === 1 ? 'locatário' : 'locatários'} pelo carro, e o aluguel bruto recebido somou ${formatMoeda(totAluguel)}. `
+    + `Nesse período passaram ${linhasContratos.length} ${linhasContratos.length === 1 ? 'locatário' : 'locatários'} pelo carro${diasParado > 0 ? `, com ${diasParado} dia(s) parado sem locatário` : ', sem nenhum dia parado'}, e o aluguel bruto recebido somou ${formatMoeda(totAluguel)}. `
     + `Descontando ${nomeGasto.toLowerCase()}, manutenção e proteção veicular (${formatMoeda(totAdmin + totManut + totParcela + totProtecao)} no total), o lucro líquido até hoje é de ${formatMoeda(totLiquido)}`
     + (pctSobreInvestido != null ? `, o equivalente a ${pctSobreInvestido.toFixed(1).replace('.', ',')}% do valor investido na compra (${formatMoeda(v.valorCompra)}).` : '.');
+
+  // Diagnóstico do veículo: peças trocadas e reparos fora da revisão normal (pneu, outro) — pra
+  // mostrar no relatório o que já foi feito (e o que não foi) além do ciclo oficial de revisões.
+  const itensDiagnostico = [...manuts].filter((m) => m.tipo !== 'revisao').sort((a, b) => (a.dataRealizada || '').localeCompare(b.dataRealizada || ''));
+  const teveTrocaPneu = itensDiagnostico.some((m) => m.tipo === 'pneu');
 
   container.innerHTML = `
     <div class="print:hidden">
@@ -1712,7 +1718,7 @@ function renderRelatorio() {
             : `<div style="flex-grow:${Math.max(s.pct, 0.5)}" class="flex items-center justify-center bg-slate-200 text-slate-400"></div>`
           ).join('')}
         </div>
-        <p class="mb-5 text-[10px] text-slate-400">De ${formatDateBR(inicio)} até ${formatDateBR(hoje)} · cinza = carro parado, sem locatário</p>
+        <p class="mb-5 text-[10px] text-slate-400">De ${formatDateBR(inicio)} até ${formatDateBR(hoje)} · ${diasParado > 0 ? `${diasParado} dia(s) parado sem locatário` : 'nenhum dia parado'} · cinza = carro parado, sem locatário</p>
 
         <h2 class="mb-2 text-sm font-bold uppercase tracking-wide text-slate-800">Contratos</h2>
         <table class="mb-6 w-full border-collapse text-sm break-inside-avoid">
@@ -1793,6 +1799,29 @@ function renderRelatorio() {
             </tr>
           </tfoot>
         </table>
+
+        <h2 class="mb-2 mt-6 text-sm font-bold uppercase tracking-wide text-slate-800">Diagnóstico do veículo</h2>
+        <p class="mb-2 text-xs text-slate-600">Pneus: ${teveTrocaPneu ? 'já teve troca de pneu registrada (ver abaixo).' : 'nenhuma troca de pneu registrada até hoje.'}</p>
+        ${itensDiagnostico.length ? `
+        <table class="mb-5 w-full border-collapse text-sm break-inside-avoid">
+          <thead>
+            <tr class="bg-slate-900 text-white">
+              <th class="px-2 py-2 text-left font-semibold">Data</th>
+              <th class="px-2 py-2 text-left font-semibold">Item</th>
+              <th class="px-2 py-2 text-left font-semibold">Km</th>
+              <th class="px-2 py-2 text-right font-semibold">Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itensDiagnostico.map((m, i) => `
+              <tr class="border-b border-slate-200 ${i % 2 === 1 ? 'bg-slate-50' : ''}">
+                <td class="px-2 py-1.5">${formatDateBR(m.dataRealizada)}</td>
+                <td class="px-2 py-1.5">${esc(m.tipo === 'pneu' ? `Troca de pneu${m.observacoes ? ` — ${m.observacoes}` : ''}` : (m.observacoes || 'Reparo'))}</td>
+                <td class="px-2 py-1.5">${m.kmRealizado ? m.kmRealizado.toLocaleString('pt-BR') : '—'}</td>
+                <td class="px-2 py-1.5 text-right">${m.valor ? formatMoeda(m.valor) : 'garantia / sem custo'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>` : `<p class="mb-5 text-xs text-slate-400">Nenhuma outra troca de peça ou reparo registrado até hoje, além das revisões.</p>`}
 
         <p class="mt-4 text-[10px] text-slate-400">Semana sem pagamento lançado no app conta pelo valor combinado em contrato; mês sem locatário não conta aluguel nem ${nomeGasto.toLowerCase()}.</p>
       </div>

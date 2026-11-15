@@ -271,6 +271,26 @@ export const MANUTENCOES_SEED = [
     kmRealizado: 59947,
     status: 'concluida',
   },
+  // Troca de peças fora do ciclo normal de revisão, cobertas pela garantia BYD (sem custo pro
+  // proprietário — por isso valor 0, não entra como gasto no relatório).
+  {
+    id: 'manutencao-smm-caixa-direcao',
+    veiculoId: 'veiculo-smm4d01',
+    tipo: 'outro',
+    dataRealizada: '2026-09-01', // mês conferido (set/2026); dia exato não registrado
+    valor: 0,
+    status: 'concluida',
+    observacoes: 'Caixa de direção (peça original) trocada na garantia da BYD — sem custo pro proprietário.',
+  },
+  {
+    id: 'manutencao-smm-motor-cambio',
+    veiculoId: 'veiculo-smm4d01',
+    tipo: 'outro',
+    dataRealizada: '2026-11-15', // ainda não trocado fisicamente; já contabilizado a pedido do proprietário
+    valor: 0,
+    status: 'concluida',
+    observacoes: 'Motorzinho (atuador) do câmbio — troca na garantia da BYD, prevista pra próxima revisão. Já lançado aqui mesmo antes da troca física, a pedido do proprietário.',
+  },
 ];
 
 function diasEntreISO(a, b) {
