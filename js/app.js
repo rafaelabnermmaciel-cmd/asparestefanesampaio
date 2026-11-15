@@ -25,8 +25,8 @@ import {
   aprovarAcesso,
   recusarAcesso,
   ouvirProprietariosAprovados,
-} from './firestore.js?v=8';
-import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js?v=8';
+} from './firestore.js?v=9';
+import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js?v=9';
 
 // ---------------------------------------------------------------------------------------------
 // Estado
@@ -175,21 +175,6 @@ function diffDiasISO(a, b) {
   const da = new Date(`${a}T00:00:00`);
   const db_ = new Date(`${b}T00:00:00`);
   return Math.round((db_ - da) / 86400000);
-}
-
-// Datas (ISO) de todas as segundas-feiras (dia de pagamento padrão) do mês 'AAAA-MM' — usado
-// pra projetar a receita do mês inteiro.
-function segundasDoMes(mesAtual) {
-  const [ano, mes] = mesAtual.split('-').map(Number);
-  const datas = [];
-  const d = new Date(ano, mes - 1, 1);
-  while (d.getMonth() === mes - 1) {
-    if (d.getDay() === 1) {
-      datas.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
-    }
-    d.setDate(d.getDate() + 1);
-  }
-  return datas;
 }
 
 function esc(str) {
@@ -392,19 +377,21 @@ function renderPainel() {
     } else {
       // Aluguel previsto do mês = soma de todo pagamento já registrado pra essa locação nesse mês
       // (cobre qualquer dia da semana — ex: o último pagamento do esquema antigo, antes de uma
-      // troca de dia de pagamento) + uma projeção pro valor cheio em cada segunda ainda sem
-      // pagamento registrado. Uma segunda sem registro só entra na projeção se for recente (até
-      // 7 dias atrás) ou futura — uma segunda bem antiga sem registro normalmente é porque, antes
-      // da troca de dia de pagamento, aquele dia nem era o dia de cobrança (não é uma semana
-      // perdida, é só uma data que nunca existiu de verdade).
+      // troca de dia de pagamento) + uma projeção pro valor cheio em cada dia de cobrança ainda sem
+      // pagamento registrado. Usa datasCobrancaLocacao (mesma lógica do Relatório) em vez de só
+      // "toda segunda do mês" — assim respeita o dia de pagamento de cada locação (e sua troca ao
+      // longo do tempo), em vez de supor que é sempre segunda-feira. Uma data sem registro só entra
+      // na projeção se for recente (até 7 dias atrás) ou futura — uma data bem antiga sem registro
+      // normalmente é porque, antes da troca de dia de pagamento, aquele dia nem era o dia de
+      // cobrança (não é uma semana perdida, é só uma data que nunca existiu de verdade).
       const parcelasTotal = fins.reduce((s, f) => s + Number(f.parcela || 0), 0);
       let alugueis = 0;
       if (loc) {
         const pagamentosDoMes = state.pagamentos.filter((p) => p.locacaoId === loc.id && (p.dataReferencia || '').startsWith(mesAtual));
         const datasRegistradas = new Set(pagamentosDoMes.map((p) => p.dataReferencia));
         const somaRegistrada = pagamentosDoMes.reduce((s, p) => s + Number(p.valor || 0), 0);
-        const segundasProjetadas = segundasDoMes(mesAtual).filter((d) => !datasRegistradas.has(d) && diffDiasISO(d, hoje) <= 7);
-        alugueis = somaRegistrada + segundasProjetadas.length * Number(loc.valorSemanal || 0);
+        const datasProjetadas = datasCobrancaNoMes(loc, mesAtual).filter((d) => !datasRegistradas.has(d) && diffDiasISO(d, hoje) <= 7);
+        alugueis = somaRegistrada + datasProjetadas.length * Number(loc.valorSemanal || 0);
       }
       receitaMes = alugueis - parcelasTotal - Number(v.protecaoVeicularMensal || 0);
       detalheReceita = { alugueis, parcelasTotal, protecao: Number(v.protecaoVeicularMensal || 0) };
@@ -1381,15 +1368,12 @@ function fimEfetivoLocacao(loc) {
   return loc.dataFim && loc.dataFim < hoje ? loc.dataFim : hoje;
 }
 
-// Todas as datas de cobrança (segundo o dia da semana combinado no contrato) de uma locação,
-// do início até o fim efetivo — é o que dá pra reconstruir o aluguel desde o início de cada
-// contrato, mesmo pras semanas de locatários antigos que nunca tiveram pagamento lançado no app.
-function datasCobrancaLocacao(loc) {
-  if (!loc.dataRetirada) return [];
-  const fim = fimEfetivoLocacao(loc);
-  if (loc.dataRetirada > fim) return [];
+// Datas de cobrança (segundo o dia da semana combinado no contrato, respeitando a troca de dia
+// ao longo do tempo) de uma locação entre duas datas ISO quaisquer, inclusive.
+function datasCobrancaEntre(loc, inicio, fim) {
+  if (!inicio || inicio > fim) return [];
   const datas = [];
-  const d = new Date(`${loc.dataRetirada}T00:00:00`);
+  const d = new Date(`${inicio}T00:00:00`);
   const dFim = new Date(`${fim}T00:00:00`);
   const dataTroca = loc.dataTrocaDiaPagamento || DATA_TROCA_DIA_PAGAMENTO;
   while (d <= dFim) {
@@ -1399,6 +1383,29 @@ function datasCobrancaLocacao(loc) {
     d.setDate(d.getDate() + 1);
   }
   return datas;
+}
+
+// Todas as datas de cobrança de uma locação, do início até o fim efetivo — é o que dá pra
+// reconstruir o aluguel desde o início de cada contrato, mesmo pras semanas de locatários antigos
+// que nunca tiveram pagamento lançado no app. Nunca passa de hoje (não projeta cobrança futura).
+function datasCobrancaLocacao(loc) {
+  if (!loc.dataRetirada) return [];
+  return datasCobrancaEntre(loc, loc.dataRetirada, fimEfetivoLocacao(loc));
+}
+
+// Datas de cobrança de uma locação dentro de um mês 'AAAA-MM' inteiro — ao contrário de
+// datasCobrancaLocacao, isso inclui dias ainda por vir dentro do mês (usado pra projetar o
+// resultado do mês inteiro no Painel, não só o que já aconteceu até hoje).
+function datasCobrancaNoMes(loc, mesAtual) {
+  if (!loc.dataRetirada) return [];
+  const [ano, mes] = mesAtual.split('-').map(Number);
+  const inicioMes = `${mesAtual}-01`;
+  const ultimoDiaMes = new Date(ano, mes, 0).getDate();
+  const fimMes = `${mesAtual}-${String(ultimoDiaMes).padStart(2, '0')}`;
+  const limiteSuperior = loc.status === 'encerrada' ? (loc.dataFimReal || loc.dataFim || fimMes) : fimMes;
+  const inicio = loc.dataRetirada > inicioMes ? loc.dataRetirada : inicioMes;
+  const fim = limiteSuperior < fimMes ? limiteSuperior : fimMes;
+  return datasCobrancaEntre(loc, inicio, fim);
 }
 
 // Aluguel de cada mês, somando TODOS os contratos (ativos e já encerrados) desde o início da
@@ -1550,6 +1557,17 @@ function renderRelatorio() {
     + `Nesse período passaram ${linhasContratos.length} ${linhasContratos.length === 1 ? 'locatário' : 'locatários'} pelo carro${diasParado > 0 ? `, com ${diasParado} dia(s) parado sem locatário` : ', sem nenhum dia parado'}, e o aluguel bruto recebido somou ${formatMoeda(totAluguel)}. `
     + `Descontando ${nomeGasto.toLowerCase()}, manutenção e proteção veicular (${formatMoeda(totAdmin + totManut + totParcela + totProtecao)} no total), o lucro líquido até hoje é de ${formatMoeda(totLiquido)}`
     + (pctSobreInvestido != null ? `, o equivalente a ${pctSobreInvestido.toFixed(1).replace('.', ',')}% do valor investido na compra (${formatMoeda(v.valorCompra)}).` : '.');
+
+  // Gráfico circular (conic-gradient puro em CSS, sem biblioteca) com o destino do aluguel bruto:
+  // quanto virou gasto principal (administração/financiamento), quanto foi manutenção+proteção
+  // e quanto sobrou de lucro líquido pro proprietário — os três sempre somam o aluguel bruto.
+  const baseAluguel = Math.max(1, totAluguel);
+  const gastoPrincipalMes = ehAdministracao ? totAdmin : totParcela;
+  const pctGastoPrincipal = Math.max(0, (gastoPrincipalMes / baseAluguel) * 100);
+  const pctManutProtecao = Math.max(0, ((totManut + totProtecao) / baseAluguel) * 100);
+  const pctLiquidoDonut = Math.max(0, 100 - pctGastoPrincipal - pctManutProtecao);
+  const corte1 = pctLiquidoDonut;
+  const corte2 = pctLiquidoDonut + pctGastoPrincipal;
 
   // Diagnóstico do veículo: peças trocadas e reparos fora da revisão normal (pneu, outro) — pra
   // mostrar no relatório o que já foi feito (e o que não foi) além do ciclo oficial de revisões.
@@ -1714,6 +1732,21 @@ function renderRelatorio() {
 
         <h2 class="mb-1.5 text-sm font-bold uppercase tracking-wide text-slate-800">Resumo</h2>
         <p class="mb-5 text-xs leading-relaxed text-slate-700">${resumoTexto}</p>
+
+        <h2 class="mb-2 text-sm font-bold uppercase tracking-wide text-slate-800">Para onde foi o aluguel</h2>
+        <div class="mb-5 flex flex-wrap items-center gap-6 break-inside-avoid">
+          <div class="relative h-32 w-32 shrink-0 rounded-full" style="background: conic-gradient(#10b981 0% ${corte1}%, #f97316 ${corte1}% ${corte2}%, #f43f5e ${corte2}% 100%)">
+            <div class="absolute inset-[10px] flex flex-col items-center justify-center rounded-full bg-white text-center">
+              <p class="text-[9px] text-slate-400">Lucro líquido</p>
+              <p class="text-sm font-bold text-emerald-700">${pctLiquidoDonut.toFixed(0)}%</p>
+            </div>
+          </div>
+          <div class="space-y-1.5 text-xs text-slate-700">
+            <p><span class="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-emerald-500"></span>Lucro líquido — ${formatMoeda(totLiquido)} (${pctLiquidoDonut.toFixed(0)}%)</p>
+            <p><span class="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-orange-500"></span>${nomeGasto} — ${formatMoeda(gastoPrincipalMes)} (${pctGastoPrincipal.toFixed(0)}%)</p>
+            <p><span class="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-rose-500"></span>Manutenção + proteção — ${formatMoeda(totManut + totProtecao)} (${pctManutProtecao.toFixed(0)}%)</p>
+          </div>
+        </div>
 
         <h2 class="mb-2 text-sm font-bold uppercase tracking-wide text-slate-800">Ocupação do carro</h2>
         <div class="mb-1 flex h-7 overflow-hidden rounded border border-slate-200 text-[10px] text-white break-inside-avoid">
