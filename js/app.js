@@ -27,8 +27,8 @@ import {
   aprovarAcesso,
   recusarAcesso,
   ouvirProprietariosAprovados,
-} from './firestore.js?v=17';
-import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js?v=17';
+} from './firestore.js?v=18';
+import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js?v=18';
 
 // ---------------------------------------------------------------------------------------------
 // Estado
@@ -230,6 +230,50 @@ function administracoesDoVeiculo(veiculoId) {
 
 function administracaoDoMes(veiculoId, mes) {
   return state.administracoes.find((a) => a.veiculoId === veiculoId && a.mesReferencia === mes);
+}
+
+// Aluguel bruto e lucro líquido acumulados de um veículo, do início da operação até hoje — mesma
+// lógica de renderRelatorio, só que sem montar a tabela mês a mês (usado no resumo "Minha
+// receita" do Painel, pra comparar o que o Rafael já ganhou do carro dele com o que já recebeu
+// de administração dos outros).
+function totaisAcumuladosVeiculo(veiculoId) {
+  const v = veiculoPorId(veiculoId);
+  if (!v) return { totAluguel: 0, totLiquido: 0 };
+  const manuts = manutencoesDoVeiculo(veiculoId);
+  const adminPorMes = {};
+  administracoesDoVeiculo(veiculoId).forEach((a) => { adminPorMes[a.mesReferencia] = Number(a.valor || 0); });
+  const fins = financiamentosDoVeiculo(veiculoId);
+  const parcelaMensal = fins.reduce((s, f) => s + Number(f.parcela || 0), 0);
+  const protecaoMensal = Number(v.protecaoVeicularMensal || 0);
+  const taxaAdmin = Number(v.taxaAdministracaoMensal || 0);
+  const ehAdministracao = v.tipoReceita === 'administracao';
+  const { aluguelPorMes } = aluguelPorMesDoVeiculo(veiculoId);
+  const primeiraLocacao = locacoesDoVeiculo(veiculoId).reduce((maisAntiga, l) => (
+    !maisAntiga || (l.dataRetirada || '') < maisAntiga ? l.dataRetirada : maisAntiga
+  ), null);
+  const inicio = v.dataInicioOperacao || primeiraLocacao || hojeISO();
+  const meses = mesesEntre(inicio, hojeISO());
+  const inicioAdministracao = v.administracaoDesde || inicio;
+  const mesAtual = hojeISO().slice(0, 7);
+
+  let totAluguel = 0, totLiquido = 0;
+  meses.forEach((mes) => {
+    const aluguel = aluguelPorMes[mes] || 0;
+    const manutencao = manuts.filter((m) => (m.dataRealizada || '').startsWith(mes)).reduce((s, m) => s + Number(m.valor || 0), 0);
+    const administracaoAtiva = !v.administracaoDesde || mes >= v.administracaoDesde.slice(0, 7);
+    let administracao = 0;
+    if (ehAdministracao && aluguel > 0 && administracaoAtiva) {
+      if (adminPorMes[mes] != null) administracao = adminPorMes[mes];
+      else if (mes === mesAtual) administracao = 0;
+      else if (mes === inicioAdministracao.slice(0, 7) && v.administracaoPrimeiroMesValor != null) administracao = Number(v.administracaoPrimeiroMesValor);
+      else administracao = taxaAdmin;
+    }
+    const parcela = ehAdministracao ? 0 : parcelaMensal;
+    const protecao = protecaoMensal;
+    totAluguel += aluguel;
+    totLiquido += aluguel - administracao - manutencao - parcela - protecao;
+  });
+  return { totAluguel, totLiquido };
 }
 
 function ultimaRevisao(veiculoId) {
@@ -470,7 +514,30 @@ function renderPainel() {
       </div>`;
   }).join('');
 
+  let minhaReceitaHtml = '';
+  if (souAdmin()) {
+    const meuCarro = state.veiculos.find((v) => v.tipoReceita === 'total');
+    const totaisMeuCarro = meuCarro ? totaisAcumuladosVeiculo(meuCarro.id) : { totLiquido: 0 };
+    const totalAdminRecebida = state.administracoes.filter((a) => a.status === 'pago').reduce((s, a) => s + Number(a.valor || 0), 0);
+    minhaReceitaHtml = `
+      <div>
+        <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Minha receita (desde o início)</h3>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <p class="text-xs text-slate-400">Lucro líquido do seu carro${meuCarro ? ` (${esc(meuCarro.placa)})` : ''}</p>
+            <p class="mt-1 text-xl font-semibold text-indigo-600 dark:text-indigo-400">${formatMoeda(totaisMeuCarro.totLiquido)}</p>
+          </div>
+          <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <p class="text-xs text-slate-400">Administração recebida (outros carros)</p>
+            <p class="mt-1 text-xl font-semibold text-indigo-600 dark:text-indigo-400">${formatMoeda(totalAdminRecebida)}</p>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   container.innerHTML = `
+    ${minhaReceitaHtml}
     <div class="grid grid-cols-3 gap-2 sm:gap-4">
       <div class="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm sm:p-6 dark:border-slate-800 dark:bg-slate-900">
         <p class="text-[10px] font-medium uppercase tracking-wide text-slate-400 sm:text-xs">Lucro do mês</p>
