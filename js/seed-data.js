@@ -59,6 +59,7 @@ export const VEICULOS_SEED = [
     dataLeituraAtual: '2026-10-21',
     protecaoVeicularMensal: PROTECAO_VEICULAR_MENSAL,
     taxaAdministracaoMensal: TAXA_ADMINISTRACAO_MENSAL,
+    administracaoPrimeiroMesValor: 750, // o Douglas pagou só metade (15 dias) no mês do Max, que começou dia 16
     status: 'ativo',
   },
   {

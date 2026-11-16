@@ -25,8 +25,8 @@ import {
   aprovarAcesso,
   recusarAcesso,
   ouvirProprietariosAprovados,
-} from './firestore.js?v=15';
-import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js?v=15';
+} from './firestore.js?v=16';
+import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js?v=16';
 
 // ---------------------------------------------------------------------------------------------
 // Estado
@@ -1543,11 +1543,10 @@ function renderRelatorio() {
   const inicio = v.dataInicioOperacao || primeiraLocacao || hojeISO();
   const meses = mesesEntre(inicio, hojeISO());
 
-  // A administração só passa a ser cobrada a partir de quando o carro começou a ser administrado
-  // (dataInicioOperacao, ou administracaoDesde quando o carro teve um período inicial sem taxa,
-  // como o SGY7C19 com o Gustavo). No mês em que isso cai no meio do mês, cobra só a parte
-  // proporcional aos dias que restaram — foi assim que o Douglas pagou só R$750 (metade) no mês
-  // do Max, que começou dia 16.
+  // A administração do primeiro mês foi um caso específico do Douglas (só R$750, porque o
+  // contrato do Max começou no meio do mês) — não uma regra geral; outros carros começaram a
+  // administração cobrando o mês cheio mesmo começando no meio do mês. Por isso usa um valor
+  // travado (administracaoPrimeiroMesValor) em vez de calcular proporcionalmente aos dias.
   const inicioAdministracao = v.administracaoDesde || inicio;
 
   let totAluguel = 0, totAdmin = 0, totManut = 0, totParcela = 0, totProtecao = 0, totLiquido = 0;
@@ -1557,11 +1556,8 @@ function renderRelatorio() {
     const administracaoAtiva = !v.administracaoDesde || mes >= v.administracaoDesde.slice(0, 7);
     let administracao = 0;
     if (ehAdministracao && aluguel > 0 && administracaoAtiva) {
-      if (mes === inicioAdministracao.slice(0, 7)) {
-        const [ano, mesNum] = mes.split('-').map(Number);
-        const diasNoMes = new Date(ano, mesNum, 0).getDate();
-        const diaInicio = Number(inicioAdministracao.slice(8, 10));
-        administracao = taxaAdmin * ((diasNoMes - diaInicio + 1) / diasNoMes);
+      if (mes === inicioAdministracao.slice(0, 7) && v.administracaoPrimeiroMesValor != null) {
+        administracao = Number(v.administracaoPrimeiroMesValor);
       } else {
         administracao = taxaAdmin;
       }
