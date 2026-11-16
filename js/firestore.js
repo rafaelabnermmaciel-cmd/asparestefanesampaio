@@ -22,8 +22,8 @@ import {
   signOut,
   createUserWithEmailAndPassword,
 } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
-import { firebaseConfig } from './firebase-config.js?v=16';
-import { VEICULOS_SEED, FINANCIAMENTOS_SEED, LOCACOES_SEED, MANUTENCOES_SEED } from './seed-data.js?v=16';
+import { firebaseConfig } from './firebase-config.js?v=17';
+import { VEICULOS_SEED, FINANCIAMENTOS_SEED, LOCACOES_SEED, MANUTENCOES_SEED } from './seed-data.js?v=17';
 
 export const firebaseConfigurado = !Object.values(firebaseConfig).some((v) => String(v).startsWith('COLE_AQUI'));
 
@@ -123,6 +123,7 @@ const COL = {
   locacoes: 'locacoes',
   pagamentos: 'pagamentos',
   manutencoes: 'manutencoes',
+  administracoes: 'administracoes',
 };
 
 function checarDb() {
@@ -197,6 +198,13 @@ export async function definirStatusPagamento(id, status) {
 }
 
 export async function excluirPagamento(id) { return excluirDoc(COL.pagamentos, id); }
+
+// ---- Administração (o que o proprietário já pagou de taxa de administração, mês a mês) -------
+// Só existe pros carros de terceiro (tipoReceita 'administracao'). Sem um registro aqui pro mês,
+// o relatório trata esse mês como ainda não recebido — igual o aluguel não pago ainda.
+
+export function ouvirAdministracoes(callback, veiculoId) { return ouvirColecao(COL.administracoes, callback, veiculoId); }
+export function salvarAdministracao(dados, id) { return salvarDoc(COL.administracoes, dados, id); }
 
 // ---- Manutenções (revisões, pneus, etc.) --------------------------------------------------
 

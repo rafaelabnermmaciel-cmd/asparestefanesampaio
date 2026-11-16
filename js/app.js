@@ -6,6 +6,8 @@ import {
   ouvirLocacoes,
   ouvirPagamentos,
   ouvirManutencoes,
+  ouvirAdministracoes,
+  salvarAdministracao,
   salvarVeiculo,
   salvarFinanciamento,
   excluirFinanciamento,
@@ -25,8 +27,8 @@ import {
   aprovarAcesso,
   recusarAcesso,
   ouvirProprietariosAprovados,
-} from './firestore.js?v=16';
-import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js?v=16';
+} from './firestore.js?v=17';
+import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js?v=17';
 
 // ---------------------------------------------------------------------------------------------
 // Estado
@@ -38,6 +40,7 @@ const state = {
   locacoes: [],
   pagamentos: [],
   manutencoes: [],
+  administracoes: [],
   pagina: 'painel',
   pagamentosFiltro: { veiculoId: '', status: '' },
   auth: { uid: null, email: null, perfil: null },
@@ -219,6 +222,14 @@ function financiamentosDoVeiculo(veiculoId) {
 
 function manutencoesDoVeiculo(veiculoId) {
   return state.manutencoes.filter((m) => m.veiculoId === veiculoId).sort((a, b) => (b.dataRealizada || '').localeCompare(a.dataRealizada || ''));
+}
+
+function administracoesDoVeiculo(veiculoId) {
+  return state.administracoes.filter((a) => a.veiculoId === veiculoId);
+}
+
+function administracaoDoMes(veiculoId, mes) {
+  return state.administracoes.find((a) => a.veiculoId === veiculoId && a.mesReferencia === mes);
 }
 
 function ultimaRevisao(veiculoId) {
@@ -436,6 +447,10 @@ function renderPainel() {
           <button data-marcar-pago="${loc.id}" data-veiculo="${v.id}" class="flex-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500">✓ Pago (${formatMoeda(loc.valorSemanal)})</button>
           <button data-marcar-naopago="${loc.id}" data-veiculo="${v.id}" class="flex-1 rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20">✗ Não pago</button>
         </div>` : ''}
+        ${v.tipoReceita === 'administracao' && loc && souAdmin() && !administracaoDoMes(v.id, mesAtual) ? `
+        <div class="mb-2.5">
+          <button data-marcar-admin-recebida="${v.id}" class="w-full rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500">✓ Administração de ${mesAtual.split('-').reverse().join('/')} recebida (${formatMoeda(v.taxaAdministracaoMensal)})</button>
+        </div>` : ''}
         <div class="mb-2.5">
           <p class="text-xs font-medium uppercase tracking-wide text-slate-400">Próxima revisão</p>
           ${proxRevisaoHtml}
@@ -515,6 +530,23 @@ function renderPainel() {
         }, existente?.id);
         toast('Marcado como não pago (atrasado).');
       } catch (e) { toast(e.message); }
+    });
+  });
+
+  container.querySelectorAll('[data-marcar-admin-recebida]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const v = veiculoPorId(btn.dataset.marcarAdminRecebida);
+      btn.disabled = true;
+      try {
+        await salvarAdministracao({
+          veiculoId: v.id,
+          mesReferencia: mesAtual,
+          valor: v.taxaAdministracaoMensal,
+          status: 'pago',
+          dataPagamentoReal: hojeISO(),
+        });
+        toast('Administração marcada como recebida.');
+      } catch (e) { toast(e.message); btn.disabled = false; }
     });
   });
 }
@@ -1529,6 +1561,8 @@ function renderRelatorio() {
   }
 
   const manuts = manutencoesDoVeiculo(veiculoId);
+  const adminPorMes = {};
+  administracoesDoVeiculo(veiculoId).forEach((a) => { adminPorMes[a.mesReferencia] = Number(a.valor || 0); });
   const fins = financiamentosDoVeiculo(veiculoId);
   const parcelaMensal = fins.reduce((s, f) => s + Number(f.parcela || 0), 0);
   const protecaoMensal = Number(v.protecaoVeicularMensal || 0);
@@ -1550,13 +1584,22 @@ function renderRelatorio() {
   const inicioAdministracao = v.administracaoDesde || inicio;
 
   let totAluguel = 0, totAdmin = 0, totManut = 0, totParcela = 0, totProtecao = 0, totLiquido = 0;
+  const mesAtual = hojeISO().slice(0, 7);
   const linhas = meses.map((mes) => {
     const aluguel = aluguelPorMes[mes] || 0;
     const manutencao = manuts.filter((m) => (m.dataRealizada || '').startsWith(mes)).reduce((s, m) => s + Number(m.valor || 0), 0);
     const administracaoAtiva = !v.administracaoDesde || mes >= v.administracaoDesde.slice(0, 7);
+    // A administração só conta quando o proprietário já pagou de verdade (adminPorMes, lançado
+    // pelo botão "Recebi"); o mês atual, enquanto não tiver esse registro, ainda não é gasto —
+    // eles só acertam a administração no fim do mês. Meses antigos sem registro usam a estimativa
+    // de sempre, pra não mudar o histórico já conferido.
     let administracao = 0;
     if (ehAdministracao && aluguel > 0 && administracaoAtiva) {
-      if (mes === inicioAdministracao.slice(0, 7) && v.administracaoPrimeiroMesValor != null) {
+      if (adminPorMes[mes] != null) {
+        administracao = adminPorMes[mes];
+      } else if (mes === mesAtual) {
+        administracao = 0;
+      } else if (mes === inicioAdministracao.slice(0, 7) && v.administracaoPrimeiroMesValor != null) {
         administracao = Number(v.administracaoPrimeiroMesValor);
       } else {
         administracao = taxaAdmin;
@@ -2410,6 +2453,7 @@ function iniciarOuvintesConformeAuth() {
   state.locacoes = [];
   state.pagamentos = [];
   state.manutencoes = [];
+  state.administracoes = [];
   state.relatorioVeiculoId = '';
 
   if (precisaGateLogin()) {
@@ -2434,6 +2478,7 @@ function iniciarOuvintesConformeAuth() {
       pararListenersDados.push(ouvirLocacoes((d) => { state.locacoes = d; reRenderTudo(); }, veiculoId));
       pararListenersDados.push(ouvirPagamentos((d) => { state.pagamentos = d; reRenderTudo(); }, veiculoId));
       pararListenersDados.push(ouvirManutencoes((d) => { state.manutencoes = d; reRenderTudo(); }, veiculoId));
+      pararListenersDados.push(ouvirAdministracoes((d) => { state.administracoes = d; reRenderTudo(); }, veiculoId));
     }
   } else {
     pararListenersDados.push(ouvirVeiculos((d) => { state.veiculos = d; reRenderTudo(); }));
@@ -2441,6 +2486,7 @@ function iniciarOuvintesConformeAuth() {
     pararListenersDados.push(ouvirLocacoes((d) => { state.locacoes = d; reRenderTudo(); }));
     pararListenersDados.push(ouvirPagamentos((d) => { state.pagamentos = d; reRenderTudo(); }));
     pararListenersDados.push(ouvirManutencoes((d) => { state.manutencoes = d; reRenderTudo(); }));
+    pararListenersDados.push(ouvirAdministracoes((d) => { state.administracoes = d; reRenderTudo(); }));
   }
 
   renderNav();
