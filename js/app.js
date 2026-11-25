@@ -27,8 +27,8 @@ import {
   aprovarAcesso,
   recusarAcesso,
   ouvirProprietariosAprovados,
-} from './firestore.js?v=19';
-import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, MULTA_ATRASO_DIARIA, calcularProximaRevisao } from './seed-data.js?v=19';
+} from './firestore.js?v=20';
+import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, MULTA_ATRASO_DIARIA, calcularProximaRevisao } from './seed-data.js?v=20';
 
 // ---------------------------------------------------------------------------------------------
 // Estado
@@ -444,7 +444,7 @@ function renderPainel() {
       if (loc) {
         const pagamentosDoMes = state.pagamentos.filter((p) => p.locacaoId === loc.id && (p.dataReferencia || '').startsWith(mesAtual));
         const datasRegistradas = new Set(pagamentosDoMes.map((p) => p.dataReferencia));
-        const somaRegistrada = pagamentosDoMes.reduce((s, p) => s + Number(p.valor || 0), 0);
+        const somaRegistrada = pagamentosDoMes.reduce((s, p) => s + Number(p.valor || 0) + Number(p.multa || 0), 0);
         const datasProjetadas = datasCobrancaNoMes(loc, mesAtual).filter((d) => !datasRegistradas.has(d) && diffDiasISO(d, hoje) <= 7);
         alugueis = somaRegistrada + datasProjetadas.length * Number(loc.valorSemanal || 0);
       }
@@ -1590,8 +1590,8 @@ function aluguelPorMesDoVeiculo(veiculoId) {
       const mes = (p.dataReferencia || '').slice(0, 7);
       if (!mes) return;
       datasRegistradas.add(p.dataReferencia);
-      aluguelPorMes[mes] = (aluguelPorMes[mes] || 0) + Number(p.valor || 0);
-      aluguelPorLocacao[loc.id] = (aluguelPorLocacao[loc.id] || 0) + Number(p.valor || 0);
+      aluguelPorMes[mes] = (aluguelPorMes[mes] || 0) + Number(p.valor || 0) + Number(p.multa || 0);
+      aluguelPorLocacao[loc.id] = (aluguelPorLocacao[loc.id] || 0) + Number(p.valor || 0) + Number(p.multa || 0);
     });
     const datasContrato = datasCobrancaLocacao(loc);
     const datasSemRegistro = datasContrato.filter((d) => !datasRegistradas.has(d));
