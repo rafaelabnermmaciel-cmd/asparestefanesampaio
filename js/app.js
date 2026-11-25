@@ -27,8 +27,8 @@ import {
   aprovarAcesso,
   recusarAcesso,
   ouvirProprietariosAprovados,
-} from './firestore.js?v=18';
-import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, calcularProximaRevisao } from './seed-data.js?v=18';
+} from './firestore.js?v=19';
+import { MODELO_PADRAO, VALOR_SEMANAL_PADRAO, CAUCAO_PADRAO, TABELA_REVISAO_BYD, MULTA_ATRASO_DIARIA, calcularProximaRevisao } from './seed-data.js?v=19';
 
 // ---------------------------------------------------------------------------------------------
 // Estado
@@ -559,23 +559,12 @@ function renderPainel() {
   `;
 
   container.querySelectorAll('[data-marcar-pago]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', () => {
       const loc = state.locacoes.find((l) => l.id === btn.dataset.marcarPago);
       const v = veiculoPorId(btn.dataset.veiculo);
       const dataRef = dataOcorrenciaRecente(loc.diaPagamento);
       const existente = state.pagamentos.find((p) => p.locacaoId === loc.id && p.dataReferencia === dataRef);
-      try {
-        await salvarPagamento({
-          veiculoId: v.id,
-          locacaoId: loc.id,
-          dataReferencia: dataRef,
-          valor: loc.valorSemanal,
-          status: 'pago',
-          dataPagamentoReal: hojeISO(),
-          observacoes: existente?.observacoes || '',
-        }, existente?.id);
-        toast('Pagamento marcado como pago.');
-      } catch (e) { toast(e.message); }
+      abrirModalMarcarPago(loc, v, dataRef, existente);
     });
   });
 
@@ -615,6 +604,52 @@ function renderPainel() {
         toast('Administração marcada como recebida.');
       } catch (e) { toast(e.message); btn.disabled = false; }
     });
+  });
+}
+
+// Marcar o pagamento da semana como pago, com a opção de lançar multa por atraso (R$50/dia,
+// editável — às vezes é um acerto diferente combinado com o motorista).
+function abrirModalMarcarPago(loc, v, dataRef, existente) {
+  const dias = Math.max(0, diffDiasISO(dataRef, hojeISO()));
+  const multaSugerida = existente?.multa ?? (dias * MULTA_ATRASO_DIARIA);
+  const html = `
+    <h2 class="mb-1 text-lg font-semibold text-slate-900 dark:text-white">Marcar como pago</h2>
+    <p class="mb-4 text-xs text-slate-400">${esc(loc.locatarioNome)} · referência ${formatDateBR(dataRef)}</p>
+    <form id="form-marcar-pago" class="space-y-3">
+      <label class="block text-xs text-slate-500 dark:text-slate-400">Aluguel da semana
+        <input required type="number" step="0.01" name="valor" value="${existente?.valor ?? loc.valorSemanal}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+      </label>
+      <label class="block text-xs text-slate-500 dark:text-slate-400">Multa por atraso ${dias > 0 ? `<span class="text-slate-300">(${dias} dia(s) × ${formatMoeda(MULTA_ATRASO_DIARIA)})</span>` : '<span class="text-slate-300">(sem atraso)</span>'}
+        <input type="number" step="0.01" name="multa" value="${multaSugerida}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+      </label>
+      <p class="text-[11px] text-slate-400">Se foi um acerto diferente com o motorista, pode mudar ou zerar a multa à vontade.</p>
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" id="btn-cancelar" class="rounded-xl px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">Cancelar</button>
+        <button type="submit" class="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-500">Confirmar pagamento</button>
+      </div>
+    </form>
+  `;
+  abrirModal(html);
+  qs('#btn-cancelar').addEventListener('click', fecharModal);
+  qs('#form-marcar-pago').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const botao = e.target.querySelector('button[type=submit]');
+    botao.disabled = true;
+    try {
+      await salvarPagamento({
+        veiculoId: v.id,
+        locacaoId: loc.id,
+        dataReferencia: dataRef,
+        valor: Number(fd.get('valor')),
+        multa: Number(fd.get('multa')) || 0,
+        status: 'pago',
+        dataPagamentoReal: hojeISO(),
+        observacoes: existente?.observacoes || '',
+      }, existente?.id);
+      toast('Pagamento marcado como pago.');
+      fecharModal();
+    } catch (err) { toast(err.message); botao.disabled = false; }
   });
 }
 
@@ -1172,7 +1207,10 @@ function renderPagamentos() {
               <p class="text-sm font-semibold text-slate-900 dark:text-white">${esc(v?.placa || '—')} · ${esc(loc?.locatarioNome || '—')}</p>
               <p class="text-xs text-slate-400">Ref. ${formatDateBR(p.dataReferencia)}${p.dataPagamentoReal ? ` · pago em ${formatDateBR(p.dataPagamentoReal)}` : ''}</p>
             </div>
-            <p class="text-sm font-semibold text-slate-800 dark:text-slate-100">${formatMoeda(p.valor)}</p>
+            <div class="text-right">
+              <p class="text-sm font-semibold text-slate-800 dark:text-slate-100">${formatMoeda(p.valor)}</p>
+              ${p.multa ? `<p class="text-[11px] font-medium text-rose-500">+ ${formatMoeda(p.multa)} multa</p>` : ''}
+            </div>
           </div>
           <div class="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 dark:border-slate-800">
             ${souAdmin() ? `
@@ -1190,7 +1228,7 @@ function renderPagamentos() {
         <thead class="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-400 dark:border-slate-800">
           <tr>
             <th class="px-4 py-3">Referência</th><th class="px-4 py-3">Veículo / Locatário</th>
-            <th class="px-4 py-3">Valor</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Pago em</th><th class="px-4 py-3"></th>
+            <th class="px-4 py-3">Valor</th><th class="px-4 py-3">Multa</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Pago em</th><th class="px-4 py-3"></th>
           </tr>
         </thead>
         <tbody>
@@ -1202,6 +1240,7 @@ function renderPagamentos() {
               <td class="px-4 py-3 whitespace-nowrap">${formatDateBR(p.dataReferencia)}</td>
               <td class="px-4 py-3">${esc(v?.placa || '—')} · ${esc(loc?.locatarioNome || '—')}</td>
               <td class="px-4 py-3">${formatMoeda(p.valor)}</td>
+              <td class="px-4 py-3">${p.multa ? `<span class="text-rose-500">${formatMoeda(p.multa)}</span>` : '<span class="text-slate-300">—</span>'}</td>
               <td class="px-4 py-3">
                 ${souAdmin() ? `
                 <select data-status-pagamento="${p.id}" class="rounded-lg border px-2 py-1 text-xs font-semibold ${STATUS_PAGAMENTO[p.status]?.cor || ''}">
@@ -1211,7 +1250,7 @@ function renderPagamentos() {
               <td class="px-4 py-3 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">${formatDateBR(p.dataPagamentoReal)}</td>
               <td class="px-4 py-3 text-right">${souAdmin() ? `<button data-editar-pagamento="${p.id}" class="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400">Editar</button>` : ''}</td>
             </tr>`;
-          }).join('') : `<tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">Nenhum pagamento encontrado.</td></tr>`}
+          }).join('') : `<tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">Nenhum pagamento encontrado.</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -1246,6 +1285,9 @@ function abrirModalPagamento(pagamento = null) {
           <input required type="number" step="0.01" name="valor" id="input-valor-pagamento" value="${pagamento?.valor ?? ''}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
         </label>
       </div>
+      <label class="block text-xs text-slate-500 dark:text-slate-400">Multa por atraso <span class="text-slate-300">(R$${MULTA_ATRASO_DIARIA}/dia — deixa 0 se não teve ou se fez outro acerto)</span>
+        <input type="number" step="0.01" name="multa" value="${pagamento?.multa ?? 0}" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900" />
+      </label>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label class="text-xs text-slate-500 dark:text-slate-400">Status
           <select name="status" class="mt-1 block w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm dark:border-slate-800 dark:bg-slate-900">
@@ -1281,6 +1323,7 @@ function abrirModalPagamento(pagamento = null) {
       veiculoId: loc?.veiculoId || '',
       dataReferencia: fd.get('dataReferencia'),
       valor: Number(fd.get('valor')),
+      multa: Number(fd.get('multa')) || 0,
       status: fd.get('status'),
       dataPagamentoReal: fd.get('dataPagamentoReal') || '',
       observacoes: fd.get('observacoes') || '',
